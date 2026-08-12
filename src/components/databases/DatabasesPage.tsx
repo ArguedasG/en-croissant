@@ -93,6 +93,13 @@ export default function DatabasesPage() {
   const setActiveDatabase = useActiveDatabaseViewStore((store) => store.setDatabase);
 
   const isReference = referenceDatabase === selectedDatabase?.file;
+  const conversionPhaseLabel = conversionState.phase
+    ? {
+        importing: t("Databases.Add.Phase.Importing"),
+        indexing: t("Databases.Add.Phase.Indexing"),
+        finalizing: t("Databases.Add.Phase.Finalizing"),
+      }[conversionState.phase]
+    : null;
 
   const [deleteModal, toggleDeleteModal] = useToggle();
   const [exportLoading, setExportLoading] = useState(false);
@@ -137,6 +144,7 @@ export default function DatabasesPage() {
               ? {}
               : {
                   totalGames: 0,
+                  phase: null,
                   elapsedSeconds: 0,
                   targetDatabasePath: null,
                   targetDatabaseTitle: null,
@@ -180,13 +188,20 @@ export default function DatabasesPage() {
             {conversionState.inProgress && (
               <>
                 <Group px="xs" py={6} gap="xs" justify="space-between">
-                  <Group gap={6}>
+                  <Group gap={6} wrap="nowrap">
                     <Loader size="xs" />
-                    <Text size="sm">
-                      {conversionState.sourceFileName || conversionState.targetDatabaseTitle
-                        ? `${t("Databases.Add.Convert")}: ${conversionState.sourceFileName ?? conversionState.targetDatabaseTitle}`
-                        : t("Databases.Add.Convert")}
-                    </Text>
+                    <Stack gap={0}>
+                      <Text size="sm">
+                        {conversionState.sourceFileName || conversionState.targetDatabaseTitle
+                          ? `${t("Databases.Add.Convert")}: ${conversionState.sourceFileName ?? conversionState.targetDatabaseTitle}`
+                          : t("Databases.Add.Convert")}
+                      </Text>
+                      {conversionPhaseLabel && (
+                        <Text size="xs" c="dimmed">
+                          {conversionPhaseLabel}
+                        </Text>
+                      )}
+                    </Stack>
                   </Group>
                   {conversionState.totalGames > 0 && (
                     <Text size="xs" c="dimmed">
@@ -415,6 +430,7 @@ export default function DatabasesPage() {
                           setConversionState((prev) => ({
                             ...prev,
                             inProgress: true,
+                            phase: "importing",
                             targetDatabasePath: selectedDatabase.file,
                             targetDatabaseTitle: selectedDatabase.title,
                             sourceFileName,
@@ -426,6 +442,7 @@ export default function DatabasesPage() {
                             setConversionState((prev) => ({
                               ...prev,
                               inProgress: false,
+                              phase: null,
                               totalGames: 0,
                               elapsedSeconds: 0,
                               targetDatabasePath: null,

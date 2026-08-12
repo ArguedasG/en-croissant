@@ -170,6 +170,52 @@ fn get_db_or_create(
     Ok(pool.get()?)
 }
 
+fn clear_search_cache_for_db(state: &AppState, db_path: &Path) {
+    let mut cache = state.db_cache.lock().unwrap();
+    if cache
+        .as_ref()
+        .is_some_and(|(cached_path, _)| cached_path.as_path() == db_path)
+    {
+        *cache = None;
+    }
+    drop(cache);
+
+    state
+        .line_cache
+        .retain(|(_, cached_path), _| cached_path.as_path() != db_path);
+}
+
+fn invalidate_search_index(state: &AppState, db_path: &Path) -> Result<(), Error> {
+    clear_search_cache_for_db(state, db_path);
+
+    let index_path = get_index_path(db_path);
+    match remove_file(index_path) {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(error.into()),
+    }
+}
+
+fn mark_search_index_current(db_path: &Path) -> Result<(), Error> {
+    let index_path = get_index_path(db_path);
+    if !MmapSearchIndex::is_valid(&index_path) {
+        return Ok(());
+    }
+
+    let times = std::fs::FileTimes::new().set_modified(std::time::SystemTime::now());
+    OpenOptions::new()
+        .write(true)
+        .open(index_path)?
+        .set_times(times)?;
+    Ok(())
+}
+
+fn partial_database_path(db_path: &Path) -> PathBuf {
+    let mut partial = db_path.as_os_str().to_os_string();
+    partial.push(".partial");
+    PathBuf::from(partial)
+}
+
 fn update_info_count(
     db: &mut SqliteConnection,
     name: &str,
@@ -505,108 +551,173 @@ pub async fn convert_pgn(
     }
 
     let description = description.unwrap_or_default();
-
     let db_exists = db_path.exists();
+    let working_path = if db_exists {
+        invalidate_search_index(&state, &db_path)?;
+        db_path.clone()
+    } else {
+        let partial_path = partial_database_path(&db_path);
+        let partial_key = partial_path.to_string_lossy().into_owned();
+        state.connection_pool.remove(&partial_key);
+        match remove_file(&partial_path) {
+            Ok(()) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => return Err(error.into()),
+        }
+        partial_path
+    };
 
-    // create the database file
-    let db = &mut get_db_or_create(
-        &state,
-        db_path.to_str().unwrap(),
-        ConnectionOptions {
-            enable_foreign_keys: false,
-            busy_timeout: None,
-            journal_mode: JournalMode::Off,
-        },
-    )?;
+    let _ = app.emit("convert_phase", "importing");
+    let working_key = working_path.to_string_lossy().into_owned();
+    let conversion_start = Instant::now();
+    let source_bytes: u64 = files
+        .iter()
+        .filter_map(|file| file.metadata().ok().map(|metadata| metadata.len()))
+        .sum();
+    info!(
+        "Starting PGN conversion: {} file(s), {} source bytes, target {:?}",
+        files.len(),
+        source_bytes,
+        db_path
+    );
 
-    if !db_exists {
-        db.batch_execute(CREATE_TABLES_SQL)?;
-        db.batch_execute(
-            format!(
-                "INSERT INTO Info (Name, Value) VALUES (\"Version\", \"{DATABASE_VERSION}\");
-                INSERT INTO Info (Name, Value) VALUES (\"Title\", \"{title}\");
-                INSERT INTO Info (Name, Value) VALUES (\"Description\", \"{description}\");"
-            )
-            .as_str(),
+    let conversion_result = (|| -> Result<(), Error> {
+        let db = &mut get_db_or_create(
+            &state,
+            &working_key,
+            ConnectionOptions {
+                enable_foreign_keys: false,
+                busy_timeout: None,
+                journal_mode: JournalMode::Off,
+            },
         )?;
-    }
 
-    // start counting time
-    let start = Instant::now();
-
-    let mut imported_games = 0usize;
-
-    for file_path in files {
-        let current_file_name = file_path
-            .file_name()
-            .map(|name| name.to_string_lossy().into_owned());
-        let extension = file_path.extension();
-        let file = File::open(&file_path)?;
-
-        let uncompressed: Box<dyn std::io::Read + Send> = if extension == Some("bz2".as_ref()) {
-            Box::new(bzip2::read::MultiBzDecoder::new(file))
-        } else if extension == Some("zst".as_ref()) {
-            Box::new(zstd::Decoder::new(file)?)
-        } else {
-            Box::new(file)
-        };
-
-        let mut importer = Importer::new(timestamp.map(|t| t as i64));
-        let mut file_imported_games = 0usize;
-
-        db.transaction::<_, diesel::result::Error, _>(|db| {
-            for game in BufferedReader::new(uncompressed)
-                .into_iter(&mut importer)
-                .flatten()
-                .flatten()
-            {
-                if (imported_games + file_imported_games).is_multiple_of(1000) {
-                    let elapsed = start.elapsed().as_millis() as u32;
-                    app.emit(
-                        "convert_progress",
-                        (
-                            imported_games + file_imported_games,
-                            elapsed,
-                            current_file_name.clone(),
-                        ),
-                    )
-                    .unwrap();
-                }
-                game.insert_to_db(db)?;
-                file_imported_games += 1;
+        if !db_exists {
+            db.batch_execute(CREATE_TABLES_SQL)?;
+            for (name, value) in [
+                ("Version", DATABASE_VERSION),
+                ("Title", title.as_str()),
+                ("Description", description.as_str()),
+            ] {
+                insert_into(info::table)
+                    .values((info::name.eq(name), info::value.eq(value)))
+                    .execute(db)?;
             }
-            Ok(())
-        })?;
+        }
 
-        imported_games += file_imported_games;
+        let start = Instant::now();
+        let mut imported_games = 0usize;
+
+        for file_path in files {
+            let current_file_name = file_path
+                .file_name()
+                .map(|name| name.to_string_lossy().into_owned());
+            let extension = file_path.extension();
+            let file = File::open(&file_path)?;
+
+            let uncompressed: Box<dyn std::io::Read + Send> = if extension == Some("bz2".as_ref()) {
+                Box::new(bzip2::read::MultiBzDecoder::new(file))
+            } else if extension == Some("zst".as_ref()) {
+                Box::new(zstd::Decoder::new(file)?)
+            } else {
+                Box::new(file)
+            };
+
+            let mut importer = Importer::new(timestamp.map(|t| t as i64));
+            let mut file_imported_games = 0usize;
+
+            db.transaction::<_, diesel::result::Error, _>(|db| {
+                for game in BufferedReader::new(uncompressed)
+                    .into_iter(&mut importer)
+                    .flatten()
+                    .flatten()
+                {
+                    if (imported_games + file_imported_games).is_multiple_of(1000) {
+                        let elapsed = start.elapsed().as_millis() as u32;
+                        let _ = app.emit(
+                            "convert_progress",
+                            (
+                                imported_games + file_imported_games,
+                                elapsed,
+                                current_file_name.clone(),
+                            ),
+                        );
+                    }
+                    game.insert_to_db(db)?;
+                    file_imported_games += 1;
+                }
+                Ok(())
+            })?;
+
+            imported_games += file_imported_games;
+        }
+
+        info!(
+            "Imported {} games in {:?}",
+            imported_games,
+            conversion_start.elapsed()
+        );
+
+        if !db_exists {
+            let _ = app.emit("convert_phase", "indexing");
+            let indexing_start = Instant::now();
+            db.batch_execute(INDEXES_SQL)?;
+            info!("Created database indexes in {:?}", indexing_start.elapsed());
+        }
+
+        let _ = app.emit("convert_phase", "finalizing");
+        let finalizing_start = Instant::now();
+        let game_count: i64 = games::table.count().get_result(db)?;
+        let player_count: i64 = players::table.count().get_result(db)?;
+        let event_count: i64 = events::table.count().get_result(db)?;
+        let site_count: i64 = sites::table.count().get_result(db)?;
+
+        for (name, value) in [
+            ("GameCount", game_count),
+            ("PlayerCount", player_count),
+            ("EventCount", event_count),
+            ("SiteCount", site_count),
+        ] {
+            insert_into(info::table)
+                .values((info::name.eq(name), info::value.eq(value.to_string())))
+                .on_conflict(info::name)
+                .do_update()
+                .set(info::value.eq(value.to_string()))
+                .execute(db)?;
+        }
+        info!(
+            "Finalized database metadata in {:?}",
+            finalizing_start.elapsed()
+        );
+
+        Ok(())
+    })();
+
+    // Drop every pooled SQLite connection before renaming the completed file on Windows.
+    state.connection_pool.remove(&working_key);
+    if let Err(error) = conversion_result {
+        if !db_exists {
+            match remove_file(&working_path) {
+                Ok(()) => {}
+                Err(cleanup_error) if cleanup_error.kind() == std::io::ErrorKind::NotFound => {}
+                Err(cleanup_error) => info!(
+                    "Failed to remove incomplete database {:?}: {}",
+                    working_path, cleanup_error
+                ),
+            }
+        }
+        return Err(error);
     }
 
     if !db_exists {
-        // Create all the necessary indexes
-        db.batch_execute(INDEXES_SQL)?;
+        std::fs::rename(&working_path, &db_path)?;
     }
 
-    // get game, player, event and site counts and to the info table
-    let game_count: i64 = games::table.count().get_result(db)?;
-    let player_count: i64 = players::table.count().get_result(db)?;
-    let event_count: i64 = events::table.count().get_result(db)?;
-    let site_count: i64 = sites::table.count().get_result(db)?;
-
-    let counts = [
-        ("GameCount", game_count),
-        ("PlayerCount", player_count),
-        ("EventCount", event_count),
-        ("SiteCount", site_count),
-    ];
-
-    for c in counts.iter() {
-        insert_into(info::table)
-            .values((info::name.eq(c.0), info::value.eq(c.1.to_string())))
-            .on_conflict(info::name)
-            .do_update()
-            .set(info::value.eq(c.1.to_string()))
-            .execute(db)?;
-    }
+    info!(
+        "Completed PGN conversion to {:?} in {:?}",
+        db_path,
+        conversion_start.elapsed()
+    );
 
     Ok(())
 }
@@ -615,6 +726,7 @@ pub fn generate_search_index(
     db_path: &Path,
     state: &tauri::State<'_, AppState>,
 ) -> Result<(), Error> {
+    clear_search_cache_for_db(state, db_path);
     let db = &mut get_db_or_create(
         state,
         db_path.to_str().unwrap(),
@@ -625,6 +737,7 @@ pub fn generate_search_index(
     info!("Generating search index at {:?}", index_path);
     let start = Instant::now();
 
+    let load_start = Instant::now();
     let games: Vec<(
         i32,
         i32,
@@ -654,6 +767,11 @@ pub fn generate_search_index(
             games::black_elo,
         ))
         .load(db)?;
+    info!(
+        "Loaded {} games for search indexing in {:?}",
+        games.len(),
+        load_start.elapsed()
+    );
 
     let mut writer = SearchIndex::with_capacity(games.len());
     for (
@@ -689,7 +807,15 @@ pub fn generate_search_index(
     }
     writer.write_to(&index_path)?;
 
-    info!("Search index generated in {:?}", start.elapsed());
+    let index_size = index_path
+        .metadata()
+        .map(|metadata| metadata.len())
+        .unwrap_or(0);
+    info!(
+        "Search index generated in {:?} ({} bytes)",
+        start.elapsed(),
+        index_size
+    );
     Ok(())
 }
 
@@ -714,7 +840,22 @@ struct IndexInfo {
 fn check_index_exists(conn: &mut SqliteConnection) -> Result<bool, Error> {
     let query = sql_query("SELECT name FROM pragma_index_list('Games');");
     let indexes: Vec<IndexInfo> = query.load(conn)?;
-    Ok(!indexes.is_empty())
+    const REQUIRED_INDEXES: [&str; 8] = [
+        "games_date_idx",
+        "games_white_idx",
+        "games_black_idx",
+        "games_event_idx",
+        "games_result_idx",
+        "games_white_elo_idx",
+        "games_black_elo_idx",
+        "games_plycount_idx",
+    ];
+
+    Ok(REQUIRED_INDEXES.iter().all(|required| {
+        indexes
+            .iter()
+            .any(|index| index._name.as_str() == *required)
+    }))
 }
 
 #[tauri::command]
@@ -772,6 +913,7 @@ pub async fn create_indexes(file: PathBuf, state: tauri::State<'_, AppState>) ->
     let db = &mut get_db_or_create(&state, file.to_str().unwrap(), ConnectionOptions::default())?;
 
     db.batch_execute(INDEXES_SQL)?;
+    mark_search_index_current(&file)?;
 
     Ok(())
 }
@@ -782,6 +924,7 @@ pub async fn delete_indexes(file: PathBuf, state: tauri::State<'_, AppState>) ->
     let db = &mut get_db_or_create(&state, file.to_str().unwrap(), ConnectionOptions::default())?;
 
     db.batch_execute(DELETE_INDEXES_SQL)?;
+    mark_search_index_current(&file)?;
 
     Ok(())
 }
@@ -816,6 +959,8 @@ pub async fn edit_db_info(
             .set(info::value.eq(description))
             .execute(db)?;
     }
+
+    mark_search_index_current(&file)?;
 
     Ok(())
 }
@@ -1531,13 +1676,12 @@ pub async fn delete_database(
     file: PathBuf,
     state: tauri::State<'_, AppState>,
 ) -> Result<(), Error> {
+    invalidate_search_index(&state, &file)?;
     let pool = &state.connection_pool;
     let path_str = file.to_str().unwrap();
     pool.remove(path_str);
 
-    // delete file
     remove_file(path_str)?;
-    remove_file(get_index_path(&PathBuf::from(path_str)))?;
     Ok(())
 }
 
@@ -1574,6 +1718,7 @@ pub async fn delete_duplicated_games(
     file: PathBuf,
     state: tauri::State<'_, AppState>,
 ) -> Result<(), Error> {
+    invalidate_search_index(&state, &file)?;
     let db = &mut get_db_or_create(&state, file.to_str().unwrap(), ConnectionOptions::default())?;
 
     db.batch_execute(
@@ -1604,6 +1749,7 @@ pub async fn delete_empty_games(
     file: PathBuf,
     state: tauri::State<'_, AppState>,
 ) -> Result<(), Error> {
+    invalidate_search_index(&state, &file)?;
     let db = &mut get_db_or_create(&state, file.to_str().unwrap(), ConnectionOptions::default())?;
 
     diesel::delete(games::table.filter(games::ply_count.eq(0))).execute(db)?;
@@ -1771,6 +1917,7 @@ pub async fn delete_db_game(
     game_id: i32,
     state: tauri::State<'_, AppState>,
 ) -> Result<(), Error> {
+    invalidate_search_index(&state, &file)?;
     let db = &mut get_db_or_create(&state, file.to_str().unwrap(), ConnectionOptions::default())?;
 
     diesel::delete(games::table.filter(games::id.eq(game_id))).execute(db)?;
@@ -1790,14 +1937,15 @@ pub async fn write_db_game(
     pgn: String,
     state: tauri::State<'_, AppState>,
 ) -> Result<(), Error> {
-    let db = &mut get_db_or_create(&state, file.to_str().unwrap(), ConnectionOptions::default())?;
-
     let mut importer = Importer::new(None);
     let mut parsed = BufferedReader::new(pgn.as_bytes())
         .into_iter(&mut importer)
         .flatten()
         .flatten();
     let temp_game = parsed.next().ok_or(Error::NoMovesFound)?;
+
+    invalidate_search_index(&state, &file)?;
+    let db = &mut get_db_or_create(&state, file.to_str().unwrap(), ConnectionOptions::default())?;
 
     let white_id = if let Some(name) = temp_game.white_name.as_deref() {
         create_player(db, name)?.id
@@ -1878,6 +2026,8 @@ pub async fn merge_players(
         return Err(Error::NotDistinctPlayers);
     }
 
+    invalidate_search_index(&state, &file)?;
+
     diesel::update(games::table.filter(games::white_id.eq(player1)))
         .set(games::white_id.eq(player2))
         .execute(db)?;
@@ -1908,18 +2058,22 @@ pub async fn preload_reference_db(
 ) -> Result<(), Error> {
     let index_path = get_index_path(&file);
 
-    if !MmapSearchIndex::is_valid(&index_path) {
+    if !MmapSearchIndex::is_up_to_date(&file) {
         info!("Search index not found for reference database, generating...");
         generate_search_index(&file, &state)?;
     }
 
     let mut cache = state.db_cache.lock().unwrap();
-    if cache.is_none() {
+    let cache_is_current = cache.as_ref().is_some_and(|(cached_path, _)| {
+        cached_path == &file && MmapSearchIndex::is_up_to_date(&file)
+    });
+    if !cache_is_current {
+        *cache = None;
         info!("Preloading reference database from {:?}", index_path);
         match MmapSearchIndex::open(&index_path) {
             Ok(index) => {
                 info!("Preloaded reference database with {} games", index.len());
-                *cache = Some(index);
+                *cache = Some((file, index));
             }
             Err(e) => {
                 return Err(Error::from(e));
@@ -2007,6 +2161,64 @@ mod tests {
         conn.batch_execute("PRAGMA foreign_keys = ON;").unwrap();
         conn.batch_execute(CREATE_TABLES_SQL).unwrap();
         conn
+    }
+
+    #[test]
+    fn database_is_indexed_only_when_all_expected_indexes_exist() {
+        let db = &mut setup_test_db();
+        db.batch_execute(INDEXES_SQL).unwrap();
+        assert!(check_index_exists(db).unwrap());
+
+        db.batch_execute("DROP INDEX games_event_idx;").unwrap();
+        assert!(!check_index_exists(db).unwrap());
+    }
+
+    #[test]
+    fn partial_database_keeps_the_final_extension_hidden() {
+        let path = PathBuf::from("training.db3");
+        assert_eq!(
+            partial_database_path(&path),
+            PathBuf::from("training.db3.partial")
+        );
+    }
+
+    #[test]
+    fn metadata_changes_can_keep_an_existing_search_index_current() {
+        let dir = tempfile::tempdir().unwrap();
+        let db_path = dir.path().join("games.db3");
+        std::fs::write(&db_path, b"database-v1").unwrap();
+
+        let index_path = get_index_path(&db_path);
+        SearchIndex::default().write_to(&index_path).unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        std::fs::write(&db_path, b"metadata-only-change").unwrap();
+        assert!(!MmapSearchIndex::is_up_to_date(&db_path));
+
+        mark_search_index_current(&db_path).unwrap();
+        assert!(MmapSearchIndex::is_up_to_date(&db_path));
+    }
+
+    #[test]
+    fn invalidating_search_index_clears_file_and_memory_caches() {
+        let dir = tempfile::tempdir().unwrap();
+        let db_path = dir.path().join("games.db3");
+        std::fs::write(&db_path, b"database").unwrap();
+
+        let index_path = get_index_path(&db_path);
+        SearchIndex::default().write_to(&index_path).unwrap();
+
+        let state = AppState::default();
+        *state.db_cache.lock().unwrap() =
+            Some((db_path.clone(), MmapSearchIndex::open(&index_path).unwrap()));
+        state
+            .line_cache
+            .insert((GameQuery::default(), db_path.clone()), (vec![], vec![]));
+
+        invalidate_search_index(&state, &db_path).unwrap();
+
+        assert!(!index_path.exists());
+        assert!(state.db_cache.lock().unwrap().is_none());
+        assert!(state.line_cache.is_empty());
     }
 
     #[test]

@@ -67,6 +67,7 @@ function AddDatabase({
     setConversionState((prev) => ({
       ...prev,
       inProgress: true,
+      phase: "importing",
       targetDatabasePath: dbPath,
       targetDatabaseTitle: title,
       sourceFileName,
@@ -79,6 +80,7 @@ function AddDatabase({
       setConversionState((prev) => ({
         ...prev,
         inProgress: false,
+        phase: null,
         totalGames: 0,
         elapsedSeconds: 0,
         targetDatabasePath: null,

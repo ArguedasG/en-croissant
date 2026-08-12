@@ -244,6 +244,7 @@ export const selectedPuzzleDbAtom = atomWithStorage<string | null>("puzzle-db", 
 
 export type DatabaseConversionState = {
     inProgress: boolean;
+    phase: "importing" | "indexing" | "finalizing" | null;
     totalGames: number;
     elapsedSeconds: number;
     targetDatabasePath: string | null;
@@ -255,6 +256,7 @@ export const databaseConversionStateAtom = atomWithStorage<DatabaseConversionSta
     "database-conversion-state",
     {
         inProgress: false,
+        phase: null,
         totalGames: 0,
         elapsedSeconds: 0,
         targetDatabasePath: null,

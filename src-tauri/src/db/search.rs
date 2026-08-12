@@ -253,6 +253,10 @@ pub async fn search_position(
 
     let _guard = collision_lock.lock().await;
 
+    if !MmapSearchIndex::is_up_to_date(&file) {
+        super::clear_search_cache_for_db(&state, &file);
+    }
+
     if let Some(pos) = state.line_cache.get(&(query.clone(), file.clone())) {
         return Ok(pos.clone());
     }
@@ -264,10 +268,14 @@ pub async fn search_position(
 
     let mmap_index = {
         let mut cache = state.db_cache.lock().unwrap();
-        if cache.is_none() {
+        let cache_is_current = cache.as_ref().is_some_and(|(cached_path, _)| {
+            cached_path == &file && MmapSearchIndex::is_up_to_date(&file)
+        });
+        if !cache_is_current {
+            *cache = None;
             let index_path = get_index_path(&file);
 
-            if !MmapSearchIndex::is_valid(&index_path) {
+            if !MmapSearchIndex::is_up_to_date(&file) {
                 info!("Search index not found, generating automatically...");
                 drop(cache);
                 if let Err(e) = super::generate_search_index(&file, &state) {
@@ -287,14 +295,14 @@ pub async fn search_position(
                         index.len(),
                         start.elapsed()
                     );
-                    *cache = Some(index);
+                    *cache = Some((file.clone(), index));
                 }
                 Err(e) => {
                     return Err(Error::from(e));
                 }
             }
         }
-        cache.as_ref().unwrap().clone()
+        cache.as_ref().unwrap().1.clone()
     };
 
     let game_count = mmap_index.len();
@@ -476,6 +484,10 @@ pub async fn is_position_in_db(
 
     let _guard = collision_lock.lock().await;
 
+    if !MmapSearchIndex::is_up_to_date(&file) {
+        super::clear_search_cache_for_db(&state, &file);
+    }
+
     if let Some(pos) = state.line_cache.get(&(query.clone(), file.clone())) {
         return Ok(!pos.0.is_empty());
     }
@@ -493,10 +505,14 @@ pub async fn is_position_in_db(
 
     let mmap_index = {
         let mut cache = state.db_cache.lock().unwrap();
-        if cache.is_none() {
+        let cache_is_current = cache.as_ref().is_some_and(|(cached_path, _)| {
+            cached_path == &file && MmapSearchIndex::is_up_to_date(&file)
+        });
+        if !cache_is_current {
+            *cache = None;
             let index_path = get_index_path(&file);
 
-            if !MmapSearchIndex::is_valid(&index_path) {
+            if !MmapSearchIndex::is_up_to_date(&file) {
                 info!("Search index not found, generating automatically...");
                 drop(cache);
                 if let Err(e) = super::generate_search_index(&file, &state) {
@@ -516,14 +532,14 @@ pub async fn is_position_in_db(
                         index.len(),
                         start.elapsed()
                     );
-                    *cache = Some(index);
+                    *cache = Some((file.clone(), index));
                 }
                 Err(e) => {
                     return Err(Error::from(e));
                 }
             }
         }
-        cache.as_ref().unwrap().clone()
+        cache.as_ref().unwrap().1.clone()
     };
 
     let check_entry = |entry: SearchGameEntryRef<'_>| -> bool {

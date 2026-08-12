@@ -1,6 +1,5 @@
 use std::{
-    fs::create_dir_all,
-    io::Cursor,
+    fs::{create_dir_all, File},
     path::{Path, PathBuf},
 };
 
@@ -12,6 +11,7 @@ use specta::Type;
 use std::os::unix::fs::PermissionsExt;
 
 use futures_util::StreamExt;
+use tokio::io::AsyncWriteExt;
 
 use crate::error::Error;
 use crate::progress::update_progress;
@@ -40,38 +40,70 @@ pub async fn download_file(
         header_map.insert("Authorization", format!("Bearer {token}").parse().unwrap());
         req = req.headers(header_map);
     }
-    let res = req.send().await?;
+    let res = req.send().await?.error_for_status()?;
     let total_size = if let Some(total_size) = total_size {
         Some(total_size as u64)
     } else {
         res.content_length()
     };
 
-    let mut file: Vec<u8> = Vec::new();
+    let url_path = reqwest::Url::parse(&url)
+        .ok()
+        .map(|parsed| parsed.path().to_ascii_lowercase())
+        .unwrap_or_else(|| url.to_ascii_lowercase());
+    let is_zip = url_path.ends_with(".zip");
+    let is_tar = url_path.ends_with(".tar");
+    let is_archive = is_zip || is_tar;
+
+    let destination = Path::new(&path);
+    let download_dir = if is_archive {
+        destination
+    } else {
+        destination.parent().ok_or_else(|| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "Download destination has no parent directory",
+            )
+        })?
+    };
+    create_dir_all(download_dir)?;
+
+    let temporary = tempfile::NamedTempFile::new_in(download_dir)?;
+    let (temporary_file, temporary_path) = temporary.into_parts();
+    let mut output = tokio::fs::File::from_std(temporary_file);
     let mut downloaded: u64 = 0;
     let mut stream = res.bytes_stream();
 
     while let Some(item) = stream.next().await {
         let chunk = item?;
-        file.extend_from_slice(&chunk);
+        output.write_all(&chunk).await?;
         downloaded += chunk.len() as u64;
         if let Some(total_size) = total_size {
             let progress = ((downloaded as f32 / total_size as f32) * 100.0).min(100.0);
             update_progress(&state.progress_state, &app, id.clone(), progress, false)?;
         }
     }
+    output.flush().await?;
+    output.sync_all().await?;
+    drop(output);
 
-    let path = Path::new(&path);
+    info!("Downloaded file to {}", destination.display());
 
-    info!("Downloaded file to {}", path.display());
-
-    if url.ends_with(".zip") {
-        unzip_file(path, file).await?;
-    } else if url.ends_with(".tar") {
-        let mut archive = tar::Archive::new(Cursor::new(file));
-        archive.unpack(path)?;
+    if is_zip {
+        unzip_file(destination, temporary_path.as_ref()).await?;
+    } else if is_tar {
+        let file = File::open(temporary_path.as_ref() as &Path)?;
+        let mut archive = tar::Archive::new(file);
+        archive.unpack(destination)?;
     } else {
-        std::fs::write(path, file)?
+        match std::fs::remove_file(destination) {
+            Ok(()) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => return Err(error.into()),
+        }
+        temporary_path
+            .persist(destination)
+            .map_err(|error| Error::from(error.error))?;
     }
 
     if finalize {
@@ -81,8 +113,8 @@ pub async fn download_file(
     Ok(())
 }
 
-pub async fn unzip_file(path: &Path, file: Vec<u8>) -> Result<(), Error> {
-    let mut archive = zip::ZipArchive::new(Cursor::new(file))?;
+pub async fn unzip_file(path: &Path, archive_path: &Path) -> Result<(), Error> {
+    let mut archive = zip::ZipArchive::new(File::open(archive_path)?)?;
     for i in 0..archive.len() {
         let mut file = archive.by_index(i)?;
         let outpath = path.join(file.mangled_name());

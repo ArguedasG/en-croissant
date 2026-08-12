@@ -218,7 +218,8 @@ export default function App() {
   }, [fontSize]);
 
   useEffect(() => {
-    let unlisten: (() => void) | undefined;
+    let unlistenProgress: (() => void) | undefined;
+    let unlistenPhase: (() => void) | undefined;
 
     void listen<[number, number, string | null]>("convert_progress", (event) => {
       const [totalGames, elapsedMs, sourceFileName] = event.payload;
@@ -230,11 +231,22 @@ export default function App() {
         sourceFileName: sourceFileName ?? prev.sourceFileName,
       }));
     }).then((fn) => {
-      unlisten = fn;
+      unlistenProgress = fn;
+    });
+
+    void listen<"importing" | "indexing" | "finalizing">("convert_phase", (event) => {
+      setDatabaseConversionState((prev) => ({
+        ...prev,
+        inProgress: true,
+        phase: event.payload,
+      }));
+    }).then((fn) => {
+      unlistenPhase = fn;
     });
 
     return () => {
-      unlisten?.();
+      unlistenProgress?.();
+      unlistenPhase?.();
     };
   }, [setDatabaseConversionState]);
 

@@ -486,4 +486,19 @@ mod tests {
         let sum: i32 = mmap_index.par_iter().map(|e| e.id).sum();
         assert_eq!(sum, (0..100i32).sum::<i32>());
     }
+
+    #[test]
+    fn test_index_becomes_stale_when_database_changes() {
+        let dir = tempdir().unwrap();
+        let db_path = dir.path().join("games.db3");
+        std::fs::write(&db_path, b"database-v1").unwrap();
+
+        let index_path = get_index_path(&db_path);
+        SearchIndex::default().write_to(&index_path).unwrap();
+        assert!(MmapSearchIndex::is_up_to_date(&db_path));
+
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        std::fs::write(&db_path, b"database-v2").unwrap();
+        assert!(!MmapSearchIndex::is_up_to_date(&db_path));
+    }
 }
