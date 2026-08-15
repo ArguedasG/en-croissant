@@ -56,6 +56,12 @@ import {
   tabsAtom,
 } from "@/state/atoms";
 import { positionFromFen } from "@/utils/chessops";
+import {
+  buildHumanBotEngineArgs,
+  buildHumanBotEngineSettings,
+  getHumanBotProfile,
+  isMaiaEngine,
+} from "@/utils/humanBots";
 import type { GameHeaders } from "@/utils/treeReducer";
 import { unwrap } from "@/utils/unwrap";
 import EngineLogsView from "../common/EngineLogsView";
@@ -76,6 +82,18 @@ function gameResultToOutcome(result: GameResult): Outcome {
 }
 
 type BackendMove = { uci: string; clock: number | null };
+
+function isEngineControlled(settings: OpponentSettings): boolean {
+  return settings.type === "engine" || settings.type === "humanBot";
+}
+
+function hasConfiguredPlayer(settings: OpponentSettings): boolean {
+  if (settings.type === "human") return true;
+  if (settings.type === "humanBot") {
+    return Boolean(settings.engine && isMaiaEngine(settings.engine));
+  }
+  return Boolean(settings.engine);
+}
 
 function mapBackendMoves(moves: { uci: string; clock: bigint | null }[]): BackendMove[] {
   return moves.map((m) => ({
@@ -146,11 +164,13 @@ function BoardGame() {
   const [openingBookEnabled, setOpeningBookEnabled] = useAtom(gameOpeningBookEnabledAtom);
   const [openingBookMaxPly, setOpeningBookMaxPly] = useAtom(gameOpeningBookMaxPlyAtom);
 
-  const hasEngine = players.white.type === "engine" || players.black.type === "engine";
+  const whiteIsEngineControlled = isEngineControlled(players.white);
+  const blackIsEngineControlled = isEngineControlled(players.black);
+  const hasEngine = whiteIsEngineControlled || blackIsEngineControlled;
 
   const isPlayerVsEngine =
-    (players.white.type === "human" && players.black.type === "engine") ||
-    (players.black.type === "human" && players.white.type === "engine");
+    (players.white.type === "human" && blackIsEngineControlled) ||
+    (players.black.type === "human" && whiteIsEngineControlled);
 
   const orientation = headers.orientation || "white";
   const toggleOrientation = () => {
@@ -164,16 +184,24 @@ function BoardGame() {
   const fetchEngineLogs = useCallback(async () => {
     if (!gameId || !hasEngine) return;
     let color = logsColor;
-    if (players.white.type === "human" && players.black.type === "engine") {
+    if (players.white.type === "human" && blackIsEngineControlled) {
       color = "black";
-    } else if (players.black.type === "human" && players.white.type === "engine") {
+    } else if (players.black.type === "human" && whiteIsEngineControlled) {
       color = "white";
     }
     const result = await commands.getGameEngineLogs(gameId, color);
     if (result.status === "ok") {
       setEngineLogs(result.data);
     }
-  }, [gameId, logsColor, hasEngine, players.white.type, players.black.type]);
+  }, [
+    gameId,
+    logsColor,
+    hasEngine,
+    players.white.type,
+    players.black.type,
+    whiteIsEngineControlled,
+    blackIsEngineControlled,
+  ]);
 
   useEffect(() => {
     if (logsOpened) {
@@ -247,23 +275,53 @@ function BoardGame() {
     return positionFromFen(node.fen);
   }, [root]);
 
-  function toPlayerConfig(settings: OpponentSettings): PlayerConfig {
+  function toPlayerConfig(
+    settings: OpponentSettings,
+    opponentSettings: OpponentSettings,
+  ): PlayerConfig {
     if (settings.type === "human") {
       return {
         type: "human",
         name: settings.name ?? "Player",
       };
     }
+
+    if (settings.type === "humanBot") {
+      const profile = getHumanBotProfile(settings.profileId);
+      const opponentElo =
+        opponentSettings.type === "humanBot"
+          ? getHumanBotProfile(opponentSettings.profileId).elo
+          : opponentSettings.type === "engine"
+            ? (opponentSettings.engine?.elo ?? profile.elo)
+            : profile.elo;
+      const engineSettings = buildHumanBotEngineSettings(
+        profile,
+        opponentElo,
+        settings.engine?.settings ?? [],
+      );
+
+      return {
+        type: "engine",
+        name: profile.name,
+        path: settings.engine?.path ?? "",
+        args: buildHumanBotEngineArgs(settings.engine?.args ?? []),
+        options: engineSettings.map((setting) => ({
+          name: setting.name,
+          value: setting.value?.toString() ?? "",
+        })),
+        go: settings.timeControl ? null : { t: "Depth", c: 1 },
+      };
+    }
+
     return {
       type: "engine",
       name: settings.engine?.name ?? "Engine",
       path: settings.engine?.path ?? "",
-      options: (settings.engineSettings ?? settings.engine?.settings ?? [])
-        .filter((s) => s.name !== "MultiPV")
-        .map((s) => ({
-          name: s.name,
-          value: s.value?.toString() ?? "",
-        })),
+      args: settings.engine?.args ?? [],
+      options: (settings.engineSettings ?? settings.engine?.settings ?? []).map((s) => ({
+        name: s.name,
+        value: s.name === "MultiPV" ? "1" : (s.value?.toString() ?? ""),
+      })),
       go: settings.timeControl ? null : settings.go,
     };
   }
@@ -285,7 +343,7 @@ function BoardGame() {
     setPlayers(playerSettings);
 
     const boardOrientation =
-      playerSettings.black.type === "human" && playerSettings.white.type === "engine"
+      playerSettings.black.type === "human" && isEngineControlled(playerSettings.white)
         ? "black"
         : "white";
 
@@ -295,8 +353,8 @@ function BoardGame() {
     const initialMoves = getTreeMoves();
 
     const config: GameConfig = {
-      white: toPlayerConfig(playerSettings.white),
-      black: toPlayerConfig(playerSettings.black),
+      white: toPlayerConfig(playerSettings.white, playerSettings.black),
+      black: toPlayerConfig(playerSettings.black, playerSettings.white),
       whiteTimeControl: playerSettings.white.timeControl
         ? {
             initialTime: playerSettings.white.timeControl.seconds,
@@ -341,13 +399,15 @@ function BoardGame() {
       const dateStr = now.toISOString().slice(0, 10).replace(/-/g, ".");
       const timeStr = now.toISOString().slice(11, 19);
 
-      const whiteIsEngine = playerSettings.white.type === "engine";
-      const blackIsEngine = playerSettings.black.type === "engine";
+      const whiteIsEngine = isEngineControlled(playerSettings.white);
+      const blackIsEngine = isEngineControlled(playerSettings.black);
+      const hasHumanBot =
+        playerSettings.white.type === "humanBot" || playerSettings.black.type === "humanBot";
       let eventStr = "Casual Game";
       if (whiteIsEngine && blackIsEngine) {
-        eventStr = "Engine Match";
+        eventStr = hasHumanBot ? "Human Bot Match" : "Engine Match";
       } else if (whiteIsEngine || blackIsEngine) {
-        eventStr = "Player vs Engine";
+        eventStr = hasHumanBot ? "Player vs Human Bot" : "Player vs Engine";
       } else {
         eventStr = "Player Match";
       }
@@ -541,8 +601,9 @@ function BoardGame() {
 
   const [sameTimeControl, setSameTimeControl] = useAtom(gameSameTimeControlAtom);
 
-  const onePlayerIsEngine = players.white.type !== players.black.type;
-  const isEngineVsEngine = players.white.type === "engine" && players.black.type === "engine";
+  const onePlayerIsEngine = isPlayerVsEngine;
+  const isEngineVsEngine = whiteIsEngineControlled && blackIsEngineControlled;
+  const setupIsValid = hasConfiguredPlayer(player1Settings) && hasConfiguredPlayer(player2Settings);
 
   function getResignationLosingColor(): "white" | "black" {
     if (isPlayerVsEngine) {
@@ -613,7 +674,7 @@ function BoardGame() {
               onRefresh={fetchEngineLogs}
               additionalControls={
                 <>
-                  {players.white.type === "engine" && players.black.type === "engine" ? (
+                  {whiteIsEngineControlled && blackIsEngineControlled ? (
                     <SegmentedControl
                       value={logsColor}
                       onChange={(value) => setLogsColor(value as "white" | "black")}
@@ -730,7 +791,12 @@ function BoardGame() {
                   </ScrollArea>
 
                   <Divider pb="sm" />
-                  <Button onClick={startGame} fullWidth variant="light" disabled={error !== null}>
+                  <Button
+                    onClick={startGame}
+                    fullWidth
+                    variant="light"
+                    disabled={error !== null || !setupIsValid}
+                  >
                     {t("Board.Opponent.StartGame")}
                   </Button>
                 </Stack>

@@ -5,7 +5,7 @@ use std::{
         atomic::{AtomicBool, Ordering},
         Arc,
     },
-    time::Instant,
+    time::{Duration, Instant},
 };
 
 use derivative::Derivative;
@@ -50,8 +50,8 @@ pub struct EngineProcess {
 }
 
 impl EngineProcess {
-    async fn new(path: PathBuf) -> Result<(Self, EngineReader), Error> {
-        let mut base = BaseEngine::spawn(path).await?;
+    async fn new(path: PathBuf, args: &[String]) -> Result<(Self, EngineReader), Error> {
+        let mut base = BaseEngine::spawn(path, args).await?;
         base.init_uci().await?;
         let reader = base.take_reader().ok_or(Error::EngineDisconnected)?;
 
@@ -321,6 +321,7 @@ pub async fn get_engine_logs(
 pub async fn get_best_moves(
     id: String,
     engine: String,
+    engine_args: Vec<String>,
     tab: String,
     go_mode: GoMode,
     options: EngineOptions,
@@ -354,7 +355,7 @@ pub async fn get_best_moves(
         return Ok(None);
     }
 
-    let (mut process, mut reader) = EngineProcess::new(path).await?;
+    let (mut process, mut reader) = EngineProcess::new(path, &engine_args).await?;
     process.set_options(options.clone()).await?;
     process.go(&go_mode).await?;
 
@@ -476,6 +477,7 @@ pub async fn cancel_analysis(id: String, state: tauri::State<'_, AppState>) -> R
 pub async fn analyze_game(
     id: String,
     engine: String,
+    engine_args: Vec<String>,
     go_mode: GoMode,
     options: AnalysisOptions,
     uci_options: Vec<EngineOption>,
@@ -490,7 +492,7 @@ pub async fn analyze_game(
     let path = PathBuf::from(&engine);
     let mut analysis: Vec<MoveAnalysis> = Vec::new();
 
-    let (mut proc, mut reader) = EngineProcess::new(path).await?;
+    let (mut proc, mut reader) = EngineProcess::new(path, &engine_args).await?;
 
     let fen = Fen::from_ascii(options.fen.as_bytes())?;
     let setup = fen.as_setup().clone();
@@ -778,31 +780,39 @@ pub struct EngineConfig {
     pub options: Vec<UciOptionConfig>,
 }
 
+const ENGINE_CONFIG_TIMEOUT: Duration = Duration::from_secs(30);
+
 #[tauri::command]
 #[specta::specta]
-pub async fn get_engine_config(path: PathBuf) -> Result<EngineConfig, Error> {
-    let mut base = BaseEngine::spawn(path).await?;
+pub async fn get_engine_config(path: PathBuf, args: Vec<String>) -> Result<EngineConfig, Error> {
+    let mut base = BaseEngine::spawn(path, &args).await?;
 
     base.send("uci").await?;
 
     let mut config = EngineConfig::default();
 
-    let reader = base.reader_mut().ok_or(Error::EngineDisconnected)?;
-    while let Some(line) = reader.next_line().await? {
-        if let UciMessage::Id {
-            name: Some(name),
-            author: _,
-        } = parse_one(&line)
-        {
-            config.name = name;
+    tokio::time::timeout(ENGINE_CONFIG_TIMEOUT, async {
+        let reader = base.reader_mut().ok_or(Error::EngineDisconnected)?;
+        while let Some(line) = reader.next_line().await? {
+            if let UciMessage::Id {
+                name: Some(name),
+                author: _,
+            } = parse_one(&line)
+            {
+                config.name = name;
+            }
+            if let UciMessage::Option(opt) = parse_one(&line) {
+                config.options.push(opt);
+            }
+            if let UciMessage::UciOk = parse_one(&line) {
+                return Ok(());
+            }
         }
-        if let UciMessage::Option(opt) = parse_one(&line) {
-            config.options.push(opt);
-        }
-        if let UciMessage::UciOk = parse_one(&line) {
-            break;
-        }
-    }
+        Err(Error::EngineDisconnected)
+    })
+    .await
+    .map_err(|_| Error::EngineTimeout("uciok".to_string()))??;
+
     println!("{:?}", config);
     base.quit().await?;
     Ok(config)

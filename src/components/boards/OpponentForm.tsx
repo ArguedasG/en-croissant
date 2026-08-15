@@ -1,13 +1,18 @@
 import {
+  Alert,
+  Badge,
   Center,
   Divider,
   Group,
   InputWrapper,
+  Paper,
   SegmentedControl,
+  Select,
   Stack,
+  Text,
   TextInput,
 } from "@mantine/core";
-import { IconCpu, IconUser } from "@tabler/icons-react";
+import { IconAlertTriangle, IconCpu, IconRobot, IconUser } from "@tabler/icons-react";
 import { useTranslation } from "react-i18next";
 import type { GoMode } from "@/bindings";
 import GoModeInput from "@/components/common/GoModeInput";
@@ -15,6 +20,14 @@ import TimeInput, { type TimeType } from "@/components/common/TimeInput";
 import EngineSettingsForm from "@/components/panels/analysis/EngineSettingsForm";
 import type { TimeControlField } from "@/utils/clock";
 import type { EngineSettings, LocalEngine } from "@/utils/engines";
+import {
+  DEFAULT_HUMAN_BOT_PROFILE_ID,
+  getHumanBotProfile,
+  HUMAN_BOT_PROFILES,
+  type HumanBotProfileId,
+  type HumanBotStyle,
+  isMaiaEngine,
+} from "@/utils/humanBots";
 import { EnginesSelect } from "./EnginesSelect";
 
 export type OpponentSettings =
@@ -33,7 +46,17 @@ export type OpponentSettings =
       engineSettings?: EngineSettings;
       timeUnit?: TimeType;
       incrementUnit?: TimeType;
+    }
+  | {
+      type: "humanBot";
+      timeControl?: TimeControlField;
+      engine: LocalEngine | null;
+      profileId: HumanBotProfileId;
+      timeUnit?: TimeType;
+      incrementUnit?: TimeType;
     };
+
+type OpponentType = OpponentSettings["type"];
 
 export const DEFAULT_TIME_CONTROL: TimeControlField = {
   seconds: 180_000,
@@ -52,22 +75,60 @@ export function OpponentForm({
   setOtherOpponent: React.Dispatch<React.SetStateAction<OpponentSettings>>;
 }) {
   const { t } = useTranslation();
+  const humanBotProfile = getHumanBotProfile(
+    opponent.type === "humanBot" ? opponent.profileId : DEFAULT_HUMAN_BOT_PROFILE_ID,
+  );
 
-  function updateType(type: "engine" | "human") {
+  function updateType(type: OpponentType) {
     if (type === "human") {
       setOpponent((prev) => ({
         ...prev,
         type: "human",
         name: "Player",
       }));
-    } else {
+    } else if (type === "engine") {
       setOpponent((prev) => ({
         ...prev,
         type: "engine",
-        engine: null,
+        engine: "engine" in prev ? prev.engine : null,
         go: ("go" in prev && prev.go) || { t: "Depth", c: 24 },
       }));
+    } else {
+      setOpponent((prev) => {
+        const previousEngine = "engine" in prev ? prev.engine : null;
+        return {
+          ...prev,
+          type: "humanBot",
+          engine: previousEngine && isMaiaEngine(previousEngine) ? previousEngine : null,
+          profileId: prev.type === "humanBot" ? prev.profileId : DEFAULT_HUMAN_BOT_PROFILE_ID,
+        };
+      });
     }
+  }
+
+  function getStyleLabel(style: HumanBotStyle): string {
+    if (style === "adventurous") return t("HumanBots.Style.Adventurous", "Adventurous");
+    if (style === "focused") return t("HumanBots.Style.Focused", "Focused");
+    return t("HumanBots.Style.Balanced", "Balanced");
+  }
+
+  function getStyleDescription(style: HumanBotStyle): string {
+    if (style === "adventurous") {
+      return t(
+        "HumanBots.Style.Adventurous.Desc",
+        "Allows a wider variety of plausible human moves.",
+      );
+    }
+    if (style === "focused") {
+      return t(
+        "HumanBots.Style.Focused.Desc",
+        "Concentrates its choices on the most likely human moves.",
+      );
+    }
+    return t(
+      "HumanBots.Style.Balanced.Desc",
+      "Balances move variety with preference for common human choices.",
+    );
   }
 
   return (
@@ -92,9 +153,20 @@ export function OpponentForm({
               </Center>
             ),
           },
+          {
+            value: "humanBot",
+            label: (
+              <Center style={{ gap: 6 }}>
+                <IconRobot size={16} />
+                <span>{t("HumanBots.Title", "Human bot")}</span>
+              </Center>
+            ),
+          },
         ]}
+        fullWidth
+        size="xs"
         value={opponent.type}
-        onChange={(v) => updateType(v as "human" | "engine")}
+        onChange={(v) => updateType(v as OpponentType)}
       />
 
       {opponent.type === "human" && (
@@ -115,6 +187,68 @@ export function OpponentForm({
             }))
           }
         />
+      )}
+
+      {opponent.type === "humanBot" && (
+        <Stack gap="sm">
+          <EnginesSelect
+            engine={opponent.engine && isMaiaEngine(opponent.engine) ? opponent.engine : null}
+            filter={isMaiaEngine}
+            label={t("HumanBots.MaiaEngine", "Maia 3 engine")}
+            description={t(
+              "HumanBots.MaiaEngine.Desc",
+              "Local Maia 3 installation used by this profile.",
+            )}
+            setEngine={(engine) =>
+              setOpponent((prev) => (prev.type === "humanBot" ? { ...prev, engine } : prev))
+            }
+          />
+
+          {(!opponent.engine || !isMaiaEngine(opponent.engine)) && (
+            <Alert color="yellow" icon={<IconAlertTriangle size={16} />}>
+              {t(
+                "HumanBots.NoMaiaEngine",
+                "No Maia 3 engine was found. Add it from the Engines section first.",
+              )}
+            </Alert>
+          )}
+
+          <Select
+            allowDeselect={false}
+            label={t("HumanBots.Profile", "Bot profile")}
+            data={HUMAN_BOT_PROFILES.map((profile) => ({
+              value: profile.id,
+              label: `${profile.name} · ${profile.elo} ELO`,
+            }))}
+            value={humanBotProfile.id}
+            onChange={(profileId) =>
+              setOpponent((prev) =>
+                prev.type === "humanBot" && profileId
+                  ? { ...prev, profileId: profileId as HumanBotProfileId }
+                  : prev,
+              )
+            }
+          />
+
+          <Paper withBorder p="sm">
+            <Stack gap={6}>
+              <Group justify="space-between">
+                <Text fw={600}>{humanBotProfile.name}</Text>
+                <Badge variant="light">{humanBotProfile.elo} ELO</Badge>
+              </Group>
+              <Badge variant="outline" w="fit-content">
+                {getStyleLabel(humanBotProfile.style)}
+              </Badge>
+              <Text size="sm">{getStyleDescription(humanBotProfile.style)}</Text>
+              <Text size="xs" c="dimmed">
+                {t(
+                  "HumanBots.EloDisclaimer",
+                  "Profile ELO controls Maia's behavior and is also used as the human opponent ELO. It is not yet a calibrated playing-strength rating.",
+                )}
+              </Text>
+            </Stack>
+          </Paper>
+        </Stack>
       )}
 
       <Divider variant="dashed" label={t("Board.Opponent.TimeSettings")} />
@@ -214,7 +348,7 @@ export function OpponentForm({
               goMode={opponent.go}
               setGoMode={(go) =>
                 setOpponent((prev) => {
-                  if (prev.type === "human") {
+                  if (prev.type !== "engine") {
                     return prev;
                   }
                   return {
@@ -239,7 +373,7 @@ export function OpponentForm({
               }}
               setSettings={(fn) =>
                 setOpponent((prev) => {
-                  if (prev.type === "human") {
+                  if (prev.type !== "engine") {
                     return prev;
                   }
                   const newSettings = fn({

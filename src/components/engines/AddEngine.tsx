@@ -57,6 +57,7 @@ function AddEngine({
       version: "",
       name: "",
       path: "",
+      args: [],
       image: "",
       elo: undefined,
     },
@@ -219,7 +220,8 @@ function EngineCard({
       }
       const enginePath = await join(enginesDirPath, ...engine.path.split("/"));
       await commands.setFileAsExecutable(enginePath);
-      const config = unwrap(await commands.getEngineConfig(enginePath));
+      const args = engine.args ?? [];
+      const config = unwrap(await commands.getEngineConfig(enginePath, args));
       setEngines(async (prev) => [
         ...(await prev),
         {
@@ -227,6 +229,7 @@ function EngineCard({
           id: crypto.randomUUID(),
           type: "local",
           path: enginePath,
+          args,
           loaded: true,
           settings: config.options
             .filter((o) => requiredEngineSettings.includes(o.value.name))

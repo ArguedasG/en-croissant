@@ -6,6 +6,7 @@ import { type BestMoves, commands, type EngineOptions, type GoMode } from "@/bin
 import { unwrap } from "./unwrap";
 
 export const requiredEngineSettings = ["MultiPV", "Threads", "Hash"];
+export const RANDOM_SEED_PLACEHOLDER = "{{randomSeed}}";
 
 const goModeSchema: z.ZodSchema<GoMode> = z.union([
     z.object({
@@ -40,6 +41,7 @@ const localEngineSchema = z.object({
     name: z.string(),
     version: z.string(),
     path: z.string(),
+    args: z.array(z.string()).default([]),
     image: z.string().nullish(),
     elo: z.number().nullish(),
     downloadSize: z.number().nullish(),
@@ -88,7 +90,7 @@ export function getBestMoves(
     options: EngineOptions,
 ): Promise<[number, BestMoves[]] | null> {
     return commands
-        .getBestMoves(engine.id, engine.path, tab, goMode, options)
+        .getBestMoves(engine.id, engine.path, engine.args ?? [], tab, goMode, options)
         .then((r) => unwrap(r));
 }
 

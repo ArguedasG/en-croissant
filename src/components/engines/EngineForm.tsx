@@ -1,11 +1,11 @@
-import { Button, Input, NumberInput, Text, TextInput } from "@mantine/core";
+import { Button, Input, NumberInput, Text, Textarea, TextInput } from "@mantine/core";
 import type { UseFormReturnType } from "@mantine/form";
 import { open } from "@tauri-apps/plugin-dialog";
 import { useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { match } from "ts-pattern";
 import { commands, type UciOptionConfig } from "@/bindings";
-import { type LocalEngine, requiredEngineSettings } from "@/utils/engines";
+import { type LocalEngine, RANDOM_SEED_PLACEHOLDER, requiredEngineSettings } from "@/utils/engines";
 import { usePlatform } from "@/utils/files";
 import { unwrap } from "@/utils/unwrap";
 import FileInput from "../common/FileInput";
@@ -52,7 +52,9 @@ export default function EngineForm({
             filters,
           });
           if (!selected) return;
-          config.current = unwrap(await commands.getEngineConfig(selected as string));
+          config.current = unwrap(
+            await commands.getEngineConfig(selected as string, form.values.args ?? []),
+          );
           form.setFieldValue("path", selected as string);
           form.setFieldValue("name", config.current.name);
         }}
@@ -63,6 +65,27 @@ export default function EngineForm({
         placeholder={t("Engines.Add.Name.Autodetect")}
         withAsterisk
         {...form.getInputProps("name")}
+      />
+
+      <Textarea
+        label={t("Engines.Add.Arguments", "Executable arguments")}
+        description={t("Engines.Add.Arguments.Desc", {
+          placeholder: RANDOM_SEED_PLACEHOLDER,
+          defaultValue:
+            "One argument per line. Use {{placeholder}} for a new seed on every launch.",
+        })}
+        autosize
+        minRows={3}
+        value={(form.values.args ?? []).join("\n")}
+        onChange={(event) =>
+          form.setFieldValue(
+            "args",
+            event.currentTarget.value
+              .split(/\r?\n/)
+              .map((arg) => arg.trim())
+              .filter(Boolean),
+          )
+        }
       />
 
       <NumberInput

@@ -1,4 +1,4 @@
-use std::{fmt::Display, path::PathBuf, process::Stdio};
+use std::{fmt::Display, path::PathBuf, process::Stdio, time::Duration};
 
 use log::error;
 use serde::Serialize;
@@ -15,6 +15,23 @@ use super::{normalize_uci_moves_for_fen, types::GoMode};
 
 #[cfg(target_os = "windows")]
 pub const CREATE_NO_WINDOW: u32 = 0x08000000;
+
+pub const RANDOM_SEED_PLACEHOLDER: &str = "{{randomSeed}}";
+const UCI_HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(30);
+const UCI_READY_TIMEOUT: Duration = Duration::from_secs(600);
+const UCI_BEST_MOVE_TIMEOUT: Duration = Duration::from_secs(600);
+
+fn resolve_launch_args(args: &[String]) -> (Vec<String>, Option<u32>) {
+    let uses_random_seed = args.iter().any(|arg| arg.contains(RANDOM_SEED_PLACEHOLDER));
+    let random_seed = rand::random::<u32>();
+    let random_seed_text = random_seed.to_string();
+    let resolved_args = args
+        .iter()
+        .map(|arg| arg.replace(RANDOM_SEED_PLACEHOLDER, &random_seed_text))
+        .collect();
+
+    (resolved_args, uses_random_seed.then_some(random_seed))
+}
 
 #[derive(Debug, Clone, Serialize, Type)]
 #[serde(tag = "type", content = "value", rename_all = "camelCase")]
@@ -34,9 +51,11 @@ pub struct BaseEngine {
 }
 
 impl BaseEngine {
-    pub async fn spawn(path: PathBuf) -> Result<Self, Error> {
+    pub async fn spawn(path: PathBuf, args: &[String]) -> Result<Self, Error> {
+        let (resolved_args, random_seed) = resolve_launch_args(args);
         let mut command = Command::new(&path);
         command.current_dir(path.parent().unwrap_or(&path));
+        command.args(&resolved_args);
         command
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
@@ -64,7 +83,19 @@ impl BaseEngine {
             stdin,
             reader: Some(reader),
             child,
-            logs: Vec::new(),
+            logs: vec![EngineLog::Gui(match random_seed {
+                Some(seed) => format!(
+                    "launch: {} ({} arguments, randomSeed={})\n",
+                    path.display(),
+                    resolved_args.len(),
+                    seed
+                ),
+                None => format!(
+                    "launch: {} ({} arguments)\n",
+                    path.display(),
+                    resolved_args.len()
+                ),
+            })],
         })
     }
 
@@ -90,9 +121,13 @@ impl BaseEngine {
 
     pub async fn init_uci(&mut self) -> Result<(), Error> {
         self.send("uci").await?;
-        self.wait_for("uciok").await?;
+        tokio::time::timeout(UCI_HANDSHAKE_TIMEOUT, self.wait_for("uciok"))
+            .await
+            .map_err(|_| Error::EngineTimeout("uciok".to_string()))??;
         self.send("isready").await?;
-        self.wait_for("readyok").await?;
+        tokio::time::timeout(UCI_READY_TIMEOUT, self.wait_for("readyok"))
+            .await
+            .map_err(|_| Error::EngineTimeout("readyok".to_string()))??;
         Ok(())
     }
 
@@ -151,14 +186,18 @@ impl BaseEngine {
     }
 
     pub async fn wait_for_bestmove(&mut self) -> Result<String, Error> {
-        let reader = self.reader.as_mut().ok_or(Error::EngineDisconnected)?;
-        while let Some(line) = reader.next_line().await? {
-            self.logs.push(EngineLog::Engine(line.clone()));
-            if let UciMessage::BestMove { best_move, .. } = vampirc_uci::parse_one(&line) {
-                return Ok(best_move.to_string());
+        tokio::time::timeout(UCI_BEST_MOVE_TIMEOUT, async {
+            let reader = self.reader.as_mut().ok_or(Error::EngineDisconnected)?;
+            while let Some(line) = reader.next_line().await? {
+                self.logs.push(EngineLog::Engine(line.clone()));
+                if let UciMessage::BestMove { best_move, .. } = vampirc_uci::parse_one(&line) {
+                    return Ok(best_move.to_string());
+                }
             }
-        }
-        Err(Error::EngineDisconnected)
+            Err(Error::EngineDisconnected)
+        })
+        .await
+        .map_err(|_| Error::EngineTimeout("bestmove".to_string()))?
     }
 
     pub fn kill_sync(&mut self) {
@@ -169,5 +208,29 @@ impl BaseEngine {
 impl Drop for BaseEngine {
     fn drop(&mut self) {
         let _ = self.child.start_kill();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{resolve_launch_args, RANDOM_SEED_PLACEHOLDER};
+
+    #[test]
+    fn resolves_random_seed_argument_without_touching_other_arguments() {
+        let args = vec![
+            "--use-uci-history".to_string(),
+            "--seed".to_string(),
+            RANDOM_SEED_PLACEHOLDER.to_string(),
+            "--device=cpu".to_string(),
+        ];
+
+        let (resolved, random_seed) = resolve_launch_args(&args);
+
+        assert_eq!(resolved[0], "--use-uci-history");
+        assert_eq!(resolved[1], "--seed");
+        assert_ne!(resolved[2], RANDOM_SEED_PLACEHOLDER);
+        assert!(resolved[2].parse::<u32>().is_ok());
+        assert_eq!(resolved[3], "--device=cpu");
+        assert_eq!(resolved[2], random_seed.unwrap().to_string());
     }
 }

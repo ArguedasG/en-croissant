@@ -83,6 +83,7 @@ function ReportModal({
       .analyzeGame(
         `report_${tab}`,
         engine?.path ?? "",
+        engine?.args ?? [],
         form.values.goMode,
         {
           annotateNovelties: form.values.novelty,

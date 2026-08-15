@@ -41,6 +41,8 @@ pub enum PlayerConfig {
         name: String,
         path: String,
         #[serde(default)]
+        args: Vec<String>,
+        #[serde(default)]
         options: Vec<EngineOption>,
         go: Option<GoMode>,
     },
@@ -594,8 +596,14 @@ impl GameManager {
         controller.polyglot_book = polyglot_book;
         controller.polyglot_max_ply = polyglot_max_ply;
 
-        if let PlayerConfig::Engine { path, options, .. } = &config.white {
-            let mut engine = BaseEngine::spawn(PathBuf::from(path)).await?;
+        if let PlayerConfig::Engine {
+            path,
+            args,
+            options,
+            ..
+        } = &config.white
+        {
+            let mut engine = BaseEngine::spawn(PathBuf::from(path), args).await?;
             engine.init_uci().await?;
             for opt in options {
                 if opt.name == "UCI_Chess960" {
@@ -611,8 +619,14 @@ impl GameManager {
             controller.white_engine = Some(Arc::new(Mutex::new(engine)));
         }
 
-        if let PlayerConfig::Engine { path, options, .. } = &config.black {
-            let mut engine = BaseEngine::spawn(PathBuf::from(path)).await?;
+        if let PlayerConfig::Engine {
+            path,
+            args,
+            options,
+            ..
+        } = &config.black
+        {
+            let mut engine = BaseEngine::spawn(PathBuf::from(path), args).await?;
             engine.init_uci().await?;
             for opt in options {
                 if opt.name == "UCI_Chess960" {

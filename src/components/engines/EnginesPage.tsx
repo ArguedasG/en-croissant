@@ -272,9 +272,10 @@ function EngineSettings({
 
   const [engines, setEngines] = useAtom(enginesAtom);
   const engine = engines![selected] as LocalEngine;
-  const { data: options } = useSWRImmutable(["engine-config", engine.path], async ([, path]) => {
-    return unwrap(await commands.getEngineConfig(path));
-  });
+  const { data: options } = useSWRImmutable(
+    ["engine-config", engine.path, engine.args ?? []],
+    async ([, path, args]) => unwrap(await commands.getEngineConfig(path, args)),
+  );
 
   function setEngine(newEngine: LocalEngine) {
     setEngines(async (prev) => {
