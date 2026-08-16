@@ -115,6 +115,10 @@ impl BaseEngine {
         self.logs.push(EngineLog::Gui(format!("{}\n", cmd)));
     }
 
+    pub fn log_gui_message(&mut self, message: &str) {
+        self.log_gui(message);
+    }
+
     pub fn log_engine(&mut self, line: &str) {
         self.logs.push(EngineLog::Engine(line.to_string()));
     }

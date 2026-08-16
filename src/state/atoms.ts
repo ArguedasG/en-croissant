@@ -21,6 +21,12 @@ import type { LocalOptions } from "@/components/panels/database/DatabasePanel";
 import { positionFromFen, swapMove } from "@/utils/chessops";
 import type { SuccessDatabaseInfo } from "@/utils/db";
 import { type Engine, type EngineSettings, engineSchema } from "@/utils/engines";
+import type { HumanBotGameMeasurement } from "@/utils/humanBotMeasurements";
+import {
+    EMPTY_HUMAN_BOT_HISTORY,
+    humanBotHistoryStateSchema,
+    type HumanBotHistoryState,
+} from "@/utils/humanBotHistory";
 import {
     type LichessGamesOptions,
     lichessGamesOptionsSchema,
@@ -31,7 +37,7 @@ import { getWinChance, normalizeScore } from "@/utils/score";
 import { genID, type Tab, tabSchema } from "@/utils/tabs";
 import { getEnginesDir } from "../utils/directories";
 import type { Session } from "../utils/session";
-import { createAsyncZodStorage, createZodStorage } from "./utils";
+import { createAsyncZodStorage, createZodStorage, fileStorage } from "./utils";
 
 const zodArray = <Input, Output>(itemSchema: z.ZodType<Output, z.ZodTypeDef, Input>) => {
     const catchValue = {} as never;
@@ -308,6 +314,20 @@ export const gameOpeningBookEnabledAtom = atomWithStorage<boolean>(
 );
 
 export const gameOpeningBookMaxPlyAtom = atomWithStorage<number>("game-opening-book-max-ply", 40);
+
+export const humanBotMeasurementsAtom = atomWithStorage<HumanBotGameMeasurement[]>(
+    "human-bot-measurements-v1",
+    [],
+);
+
+export const humanBotHistoryAtom = unwrap(
+    atomWithStorage<HumanBotHistoryState>(
+        "human-bot-history.json",
+        EMPTY_HUMAN_BOT_HISTORY,
+        createAsyncZodStorage(humanBotHistoryStateSchema, fileStorage),
+    ),
+    () => EMPTY_HUMAN_BOT_HISTORY,
+);
 
 function tabValue<T extends object | string | boolean | number | null | undefined>(
     family: AtomFamily<string, PrimitiveAtom<T>>,

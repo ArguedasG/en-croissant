@@ -9,6 +9,7 @@ import {
   SegmentedControl,
   Select,
   Stack,
+  Switch,
   Text,
   TextInput,
 } from "@mantine/core";
@@ -25,6 +26,7 @@ import {
   getHumanBotProfile,
   HUMAN_BOT_PROFILES,
   type HumanBotProfileId,
+  type HumanBotRepertoireId,
   type HumanBotStyle,
   isMaiaEngine,
 } from "@/utils/humanBots";
@@ -52,6 +54,7 @@ export type OpponentSettings =
       timeControl?: TimeControlField;
       engine: LocalEngine | null;
       profileId: HumanBotProfileId;
+      humanTiming?: boolean;
       timeUnit?: TimeType;
       incrementUnit?: TimeType;
     };
@@ -101,6 +104,7 @@ export function OpponentForm({
           type: "humanBot",
           engine: previousEngine && isMaiaEngine(previousEngine) ? previousEngine : null,
           profileId: prev.type === "humanBot" ? prev.profileId : DEFAULT_HUMAN_BOT_PROFILE_ID,
+          humanTiming: prev.type === "humanBot" ? (prev.humanTiming ?? true) : true,
         };
       });
     }
@@ -129,6 +133,25 @@ export function OpponentForm({
       "HumanBots.Style.Balanced.Desc",
       "Balances move variety with preference for common human choices.",
     );
+  }
+
+  function getRepertoireLabel(repertoireId: HumanBotRepertoireId): string {
+    if (repertoireId === "luna-variety") {
+      return t("HumanBots.Repertoire.Luna", "Early variety");
+    }
+    if (repertoireId === "nico-open-games") {
+      return t("HumanBots.Repertoire.Nico", "Open games");
+    }
+    if (repertoireId === "vera-classical-mix") {
+      return t("HumanBots.Repertoire.Vera", "Classical mix");
+    }
+    if (repertoireId === "marcos-queen-pawn") {
+      return t("HumanBots.Repertoire.Marcos", "Queen's pawn");
+    }
+    if (repertoireId === "irene-solid-classical") {
+      return t("HumanBots.Repertoire.Irene", "Solid classical");
+    }
+    return t("HumanBots.Repertoire.Leo", "Flexible main lines");
   }
 
   return (
@@ -240,6 +263,21 @@ export function OpponentForm({
                 {getStyleLabel(humanBotProfile.style)}
               </Badge>
               <Text size="sm">{getStyleDescription(humanBotProfile.style)}</Text>
+              <Divider />
+              <Group justify="space-between" align="flex-start" wrap="nowrap">
+                <Text size="xs" c="dimmed">
+                  {t("HumanBots.Repertoire", "Opening repertoire")}
+                </Text>
+                <Text size="sm" fw={500} ta="right">
+                  {getRepertoireLabel(humanBotProfile.repertoireId)}
+                </Text>
+              </Group>
+              <Text size="xs" c="dimmed">
+                {t(
+                  "HumanBots.Repertoire.Desc",
+                  "The bot follows weighted preferences while the game remains in its repertoire, then Maia chooses normally.",
+                )}
+              </Text>
               <Text size="xs" c="dimmed">
                 {t(
                   "HumanBots.EloDisclaimer",
@@ -248,6 +286,22 @@ export function OpponentForm({
               </Text>
             </Stack>
           </Paper>
+
+          <Switch
+            checked={opponent.humanTiming ?? true}
+            label={t("HumanBots.Timing", "Human thinking time")}
+            description={t(
+              "HumanBots.Timing.Desc",
+              "Adds variable, clock-aware pauses and records the observed decision time.",
+            )}
+            onChange={(event) =>
+              setOpponent((prev) =>
+                prev.type === "humanBot"
+                  ? { ...prev, humanTiming: event.currentTarget.checked }
+                  : prev,
+              )
+            }
+          />
         </Stack>
       )}
 

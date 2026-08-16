@@ -32,7 +32,11 @@ use crate::{
 pub type GameId = String;
 
 #[derive(Clone, Debug, Serialize, Deserialize, Type)]
-#[serde(tag = "type", rename_all = "camelCase")]
+#[serde(
+    tag = "type",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
 pub enum PlayerConfig {
     Human {
         name: String,
@@ -44,8 +48,49 @@ pub enum PlayerConfig {
         args: Vec<String>,
         #[serde(default)]
         options: Vec<EngineOption>,
+        #[serde(default, rename = "openingRepertoire")]
+        #[specta(rename = "openingRepertoire")]
+        opening_repertoire: Option<OpeningRepertoireConfig>,
+        #[serde(default, rename = "humanTiming")]
+        #[specta(rename = "humanTiming")]
+        human_timing: Option<HumanTimingConfig>,
         go: Option<GoMode>,
     },
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct OpeningRepertoireConfig {
+    pub id: String,
+    #[serde(default = "default_repertoire_max_ply")]
+    pub max_ply: u32,
+    #[serde(default)]
+    pub lines: Vec<WeightedOpeningLine>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct WeightedOpeningLine {
+    pub moves: Vec<String>,
+    #[serde(default = "default_repertoire_line_weight")]
+    pub weight: u16,
+}
+
+fn default_repertoire_max_ply() -> u32 {
+    16
+}
+
+fn default_repertoire_line_weight() -> u16 {
+    1
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct HumanTimingConfig {
+    pub min_think_time_ms: u32,
+    pub average_think_time_ms: u32,
+    pub max_think_time_ms: u32,
+    pub repertoire_time_percent: u16,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, Type)]
@@ -123,6 +168,19 @@ pub struct GameMove {
     pub clock: Option<u64>,
     pub white_time: Option<u64>,
     pub black_time: Option<u64>,
+    pub color: String,
+    pub source: GameMoveSource,
+    pub think_time_ms: Option<u64>,
+}
+
+#[derive(Clone, Copy, Debug, Serialize, Type, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum GameMoveSource {
+    Human,
+    Engine,
+    ProfileRepertoire,
+    Polyglot,
+    Initial,
 }
 
 #[derive(Clone, Debug, Serialize, Type)]
@@ -304,11 +362,21 @@ impl GameController {
         matches!(self.current_turn_player(), PlayerConfig::Engine { .. })
     }
 
-    fn apply_move(&mut self, uci_str: &str) -> Result<GameMove, Error> {
+    fn apply_move(
+        &mut self,
+        uci_str: &str,
+        source: GameMoveSource,
+        think_time_ms: Option<u64>,
+    ) -> Result<GameMove, Error> {
         if self.status != GameStatus::Playing {
             return Err(Error::GameNotInProgress);
         }
 
+        let color = if self.position.turn() == Color::White {
+            "white"
+        } else {
+            "black"
+        };
         let uci = UciMove::from_ascii(uci_str.as_bytes())?;
         let mv = uci.to_move(&self.position)?;
 
@@ -358,6 +426,9 @@ impl GameController {
             clock,
             white_time,
             black_time,
+            color: color.to_string(),
+            source,
+            think_time_ms,
         };
 
         self.moves.push(game_move.clone());
@@ -367,6 +438,11 @@ impl GameController {
     }
 
     fn apply_move_no_clock(&mut self, uci_str: &str) -> Result<GameMove, Error> {
+        let color = if self.position.turn() == Color::White {
+            "white"
+        } else {
+            "black"
+        };
         let uci = UciMove::from_ascii(uci_str.as_bytes())?;
         let mv = uci.to_move(&self.position)?;
 
@@ -392,6 +468,9 @@ impl GameController {
             clock: None,
             white_time,
             black_time,
+            color: color.to_string(),
+            source: GameMoveSource::Initial,
+            think_time_ms: None,
         };
 
         self.moves.push(game_move.clone());
@@ -691,7 +770,7 @@ impl GameManager {
             return Err(Error::NotHumanTurn);
         }
 
-        let game_move = controller.apply_move(uci)?;
+        let game_move = controller.apply_move(uci, GameMoveSource::Human, None)?;
         let (white_time, black_time) = controller.get_current_times();
 
         GameMoveEvent {
@@ -1379,19 +1458,215 @@ fn try_polyglot_book_move(controller: &GameController) -> Option<String> {
     Some(legal_moves[selected].0.clone())
 }
 
+fn select_repertoire_move(
+    repertoire: &OpeningRepertoireConfig,
+    played_moves: &[String],
+    position: &Chess,
+    rng: &mut impl Rng,
+) -> Option<String> {
+    if played_moves.len() as u32 >= repertoire.max_ply {
+        return None;
+    }
+
+    let legal_moves = repertoire
+        .lines
+        .iter()
+        .filter(|line| {
+            line.moves.len() > played_moves.len()
+                && line
+                    .moves
+                    .iter()
+                    .zip(played_moves)
+                    .all(|(expected, played)| expected == played)
+        })
+        .filter_map(|line| {
+            let uci = line.moves.get(played_moves.len())?;
+            let parsed = UciMove::from_ascii(uci.as_bytes()).ok()?;
+            parsed.to_move(position).ok()?;
+            Some((uci.clone(), line.weight))
+        })
+        .collect::<Vec<_>>();
+
+    if legal_moves.is_empty() {
+        return None;
+    }
+
+    let weights = legal_moves
+        .iter()
+        .map(|(_, weight)| *weight)
+        .collect::<Vec<_>>();
+    let selected = choose_weighted_index(&weights, rng);
+    Some(legal_moves[selected].0.clone())
+}
+
+fn try_profile_repertoire_move(controller: &GameController) -> Option<(String, String)> {
+    const INITIAL_POSITION_FEN: &str = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+
+    if controller.initial_fen != INITIAL_POSITION_FEN {
+        return None;
+    }
+
+    let repertoire = match controller.current_turn_player() {
+        PlayerConfig::Engine {
+            opening_repertoire: Some(repertoire),
+            ..
+        } => repertoire,
+        _ => return None,
+    };
+    let played_moves = controller
+        .moves
+        .iter()
+        .map(|game_move| game_move.uci.clone())
+        .collect::<Vec<_>>();
+    let mut rng = rand::thread_rng();
+    let selected =
+        select_repertoire_move(repertoire, &played_moves, &controller.position, &mut rng)?;
+
+    Some((selected, repertoire.id.clone()))
+}
+
+enum EngineBookMove {
+    Profile { uci: String, repertoire_id: String },
+    Polyglot { uci: String },
+}
+
+impl EngineBookMove {
+    fn uci(&self) -> &str {
+        match self {
+            Self::Profile { uci, .. } | Self::Polyglot { uci } => uci,
+        }
+    }
+
+    fn log_message(&self) -> String {
+        match self {
+            Self::Profile { uci, repertoire_id } => {
+                format!("profile repertoire {}: {}", repertoire_id, uci)
+            }
+            Self::Polyglot { uci } => format!("polyglot opening book: {}", uci),
+        }
+    }
+
+    fn source(&self) -> GameMoveSource {
+        match self {
+            Self::Profile { .. } => GameMoveSource::ProfileRepertoire,
+            Self::Polyglot { .. } => GameMoveSource::Polyglot,
+        }
+    }
+}
+
+fn calculate_human_think_time(
+    config: &HumanTimingConfig,
+    source: GameMoveSource,
+    legal_move_count: usize,
+    in_check: bool,
+    ply: usize,
+    remaining_time_ms: Option<u64>,
+    increment_ms: u64,
+    rng: &mut impl Rng,
+) -> u64 {
+    let min_time = u64::from(config.min_think_time_ms.min(config.max_think_time_ms));
+    let max_time = u64::from(config.max_think_time_ms.max(config.min_think_time_ms));
+    let average_time = u64::from(config.average_think_time_ms).clamp(min_time, max_time);
+    let jitter_percent = rng.gen_range(70_u64..=130);
+    let mut target = average_time.saturating_mul(jitter_percent) / 100;
+
+    if ply < 10 {
+        target = target.saturating_mul(80) / 100;
+    }
+    if in_check || legal_move_count <= 8 {
+        target = target.saturating_mul(70) / 100;
+    } else if legal_move_count >= 30 {
+        target = target.saturating_mul(120) / 100;
+    }
+
+    if matches!(
+        source,
+        GameMoveSource::ProfileRepertoire | GameMoveSource::Polyglot
+    ) {
+        target = target.saturating_mul(u64::from(config.repertoire_time_percent)) / 100;
+    } else if rng.gen_ratio(1, 10) {
+        target = target.saturating_mul(160) / 100;
+    }
+
+    target = target.clamp(min_time, max_time);
+
+    if let Some(remaining) = remaining_time_ms {
+        if remaining <= 150 {
+            return 0;
+        }
+        let expected_moves_left = ((80_usize.saturating_sub(ply)) / 2).clamp(10, 35) as u64;
+        let sustainable_time = remaining / expected_moves_left + increment_ms.saturating_mul(3) / 4;
+        let clock_cap = sustainable_time.saturating_mul(2).max(100);
+        target = target.min(clock_cap).min(remaining.saturating_sub(150));
+    }
+
+    target
+}
+
+fn sample_human_think_time(controller: &GameController, source: GameMoveSource) -> Option<u64> {
+    let config = match controller.current_turn_player() {
+        PlayerConfig::Engine {
+            human_timing: Some(config),
+            ..
+        } => config,
+        _ => return None,
+    };
+    let (white_time, black_time) = controller.get_current_times();
+    let (remaining_time, increment) = match (&controller.clock, controller.position.turn()) {
+        (Some(clock), Color::White) => (white_time, clock.white_increment),
+        (Some(clock), Color::Black) => (black_time, clock.black_increment),
+        (None, _) => (None, 0),
+    };
+    let mut rng = rand::thread_rng();
+
+    Some(calculate_human_think_time(
+        config,
+        source,
+        controller.position.legal_moves().len(),
+        controller.position.is_check(),
+        controller.moves.len(),
+        remaining_time,
+        increment,
+        &mut rng,
+    ))
+}
+
+async fn wait_for_human_think_time(started_at: Instant, target_ms: Option<u64>) {
+    let Some(target_ms) = target_ms else {
+        return;
+    };
+    let elapsed_ms = started_at.elapsed().as_millis() as u64;
+    if target_ms > elapsed_ms {
+        tokio::time::sleep(Duration::from_millis(target_ms - elapsed_ms)).await;
+    }
+}
+
 async fn request_engine_move(
     game_id: &str,
     controller: &Arc<RwLock<GameController>>,
     app: &AppHandle,
 ) -> Result<(), Error> {
-    // Try polyglot book move first (only for engine turns with a loaded book)
+    let decision_started_at = Instant::now();
+
+    // A bot's profile repertoire takes priority over the optional shared Polyglot book.
     {
         let ctrl = controller.read().await;
-        let book_move = try_polyglot_book_move(&ctrl);
+        let book_move = try_profile_repertoire_move(&ctrl)
+            .map(|(uci, repertoire_id)| EngineBookMove::Profile { uci, repertoire_id })
+            .or_else(|| try_polyglot_book_move(&ctrl).map(|uci| EngineBookMove::Polyglot { uci }));
+        let human_think_time_ms = book_move
+            .as_ref()
+            .and_then(|book_move| sample_human_think_time(&ctrl, book_move.source()));
         let turn = ctrl.position.turn();
+        let engine_arc = if turn == Color::White {
+            ctrl.white_engine.clone()
+        } else {
+            ctrl.black_engine.clone()
+        };
         drop(ctrl);
 
-        if let Some(book_uci) = book_move {
+        if let Some(book_move) = book_move {
+            wait_for_human_think_time(decision_started_at, human_think_time_ms).await;
             let mut ctrl = controller.write().await;
             ctrl.engine_thinking = false;
 
@@ -1399,7 +1674,11 @@ async fn request_engine_move(
                 return Ok(());
             }
 
-            let game_move = ctrl.apply_move(&book_uci)?;
+            let game_move = ctrl.apply_move(
+                book_move.uci(),
+                book_move.source(),
+                Some(decision_started_at.elapsed().as_millis() as u64),
+            )?;
             let (white_time, black_time) = ctrl.get_current_times();
 
             GameMoveEvent {
@@ -1420,11 +1699,19 @@ async fn request_engine_move(
                 .emit(app)?;
             }
 
+            drop(ctrl);
+            if let Some(engine) = engine_arc {
+                engine
+                    .lock()
+                    .await
+                    .log_gui_message(&book_move.log_message());
+            }
+
             return Ok(());
         }
     }
 
-    let (engine_arc, go_mode, initial_fen, moves, turn) = {
+    let (engine_arc, go_mode, initial_fen, moves, turn, human_think_time_ms) = {
         let ctrl = controller.read().await;
 
         if ctrl.status != GameStatus::Playing {
@@ -1472,7 +1759,16 @@ async fn request_engine_move(
             go.unwrap_or(GoMode::Depth(20))
         };
 
-        (engine, go_mode, initial_fen, moves, turn)
+        let human_think_time_ms = sample_human_think_time(&ctrl, GameMoveSource::Engine);
+
+        (
+            engine,
+            go_mode,
+            initial_fen,
+            moves,
+            turn,
+            human_think_time_ms,
+        )
     };
 
     let best_move = {
@@ -1481,6 +1777,8 @@ async fn request_engine_move(
         engine.go(&go_mode).await?;
         engine.wait_for_bestmove().await?
     };
+
+    wait_for_human_think_time(decision_started_at, human_think_time_ms).await;
 
     let mut ctrl = controller.write().await;
     ctrl.engine_thinking = false;
@@ -1493,7 +1791,11 @@ async fn request_engine_move(
         return Ok(());
     }
 
-    let game_move = ctrl.apply_move(&best_move)?;
+    let game_move = ctrl.apply_move(
+        &best_move,
+        GameMoveSource::Engine,
+        Some(decision_started_at.elapsed().as_millis() as u64),
+    )?;
     let (white_time, black_time) = ctrl.get_current_times();
 
     GameMoveEvent {
@@ -1587,4 +1889,187 @@ pub async fn get_game_engine_logs(
     state: tauri::State<'_, crate::AppState>,
 ) -> Result<Vec<EngineLog>, Error> {
     state.game_manager.get_engine_logs(&game_id, &color).await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rand::{rngs::StdRng, SeedableRng};
+    use serde_json::json;
+
+    fn opening_line(moves: &[&str], weight: u16) -> WeightedOpeningLine {
+        WeightedOpeningLine {
+            moves: moves.iter().map(|value| (*value).to_string()).collect(),
+            weight,
+        }
+    }
+
+    fn initial_position() -> Chess {
+        parse_fen_to_position("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1")
+            .expect("initial position must be valid")
+    }
+
+    #[test]
+    fn player_config_deserializes_camel_case_opening_repertoire() {
+        let config: PlayerConfig = serde_json::from_value(json!({
+            "type": "engine",
+            "name": "Luna",
+            "path": "maia3.exe",
+            "openingRepertoire": {
+                "id": "luna-variety",
+                "maxPly": 12,
+                "lines": [{
+                    "moves": ["e2e4", "e7e5"],
+                    "weight": 5
+                }]
+            },
+            "humanTiming": {
+                "minThinkTimeMs": 450,
+                "averageThinkTimeMs": 1200,
+                "maxThinkTimeMs": 3500,
+                "repertoireTimePercent": 45
+            },
+            "go": null
+        }))
+        .expect("frontend player config must deserialize");
+
+        match &config {
+            PlayerConfig::Engine {
+                opening_repertoire: Some(repertoire),
+                human_timing: Some(timing),
+                ..
+            } => {
+                assert_eq!(repertoire.id, "luna-variety");
+                assert_eq!(repertoire.max_ply, 12);
+                assert_eq!(repertoire.lines.len(), 1);
+                assert_eq!(repertoire.lines[0].moves, ["e2e4", "e7e5"]);
+                assert_eq!(repertoire.lines[0].weight, 5);
+                assert_eq!(timing.average_think_time_ms, 1200);
+                assert_eq!(timing.repertoire_time_percent, 45);
+            }
+            _ => panic!("openingRepertoire was silently discarded"),
+        }
+
+        let serialized = serde_json::to_value(config).expect("player config must serialize");
+        assert!(serialized.get("openingRepertoire").is_some());
+        assert!(serialized.get("opening_repertoire").is_none());
+        assert!(serialized.get("humanTiming").is_some());
+        assert!(serialized.get("human_timing").is_none());
+    }
+
+    #[test]
+    fn profile_repertoire_moves_are_faster_than_maia_moves() {
+        let timing = HumanTimingConfig {
+            min_think_time_ms: 0,
+            average_think_time_ms: 2000,
+            max_think_time_ms: 10_000,
+            repertoire_time_percent: 35,
+        };
+        let mut repertoire_rng = StdRng::seed_from_u64(9);
+        let mut engine_rng = StdRng::seed_from_u64(9);
+
+        let repertoire_time = calculate_human_think_time(
+            &timing,
+            GameMoveSource::ProfileRepertoire,
+            20,
+            false,
+            20,
+            None,
+            0,
+            &mut repertoire_rng,
+        );
+        let engine_time = calculate_human_think_time(
+            &timing,
+            GameMoveSource::Engine,
+            20,
+            false,
+            20,
+            None,
+            0,
+            &mut engine_rng,
+        );
+
+        assert!(repertoire_time < engine_time);
+    }
+
+    #[test]
+    fn human_think_time_preserves_a_clock_reserve() {
+        let timing = HumanTimingConfig {
+            min_think_time_ms: 500,
+            average_think_time_ms: 10_000,
+            max_think_time_ms: 20_000,
+            repertoire_time_percent: 100,
+        };
+        let mut rng = StdRng::seed_from_u64(9);
+
+        let target = calculate_human_think_time(
+            &timing,
+            GameMoveSource::Engine,
+            30,
+            false,
+            0,
+            Some(1000),
+            0,
+            &mut rng,
+        );
+
+        assert!(target < 500);
+        assert!(target <= 850);
+    }
+
+    #[test]
+    fn repertoire_uses_only_matching_legal_continuations() {
+        let mut position = initial_position();
+        let first_move = UciMove::from_ascii(b"e2e4")
+            .expect("valid UCI")
+            .to_move(&position)
+            .expect("legal move");
+        position.play_unchecked(&first_move);
+
+        let repertoire = OpeningRepertoireConfig {
+            id: "test".to_string(),
+            max_ply: 8,
+            lines: vec![
+                opening_line(&["d2d4", "d7d5"], 100),
+                opening_line(&["e2e4", "e2e5"], 100),
+                opening_line(&["e2e4", "e7e5"], 1),
+            ],
+        };
+        let mut rng = StdRng::seed_from_u64(7);
+
+        assert_eq!(
+            select_repertoire_move(&repertoire, &["e2e4".to_string()], &position, &mut rng,),
+            Some("e7e5".to_string())
+        );
+    }
+
+    #[test]
+    fn repertoire_respects_max_ply() {
+        let repertoire = OpeningRepertoireConfig {
+            id: "test".to_string(),
+            max_ply: 0,
+            lines: vec![opening_line(&["e2e4"], 1)],
+        };
+        let mut rng = StdRng::seed_from_u64(7);
+
+        assert_eq!(
+            select_repertoire_move(&repertoire, &[], &initial_position(), &mut rng),
+            None
+        );
+    }
+
+    #[test]
+    fn repertoire_weights_control_candidate_selection() {
+        let repertoire = OpeningRepertoireConfig {
+            id: "test".to_string(),
+            max_ply: 8,
+            lines: vec![opening_line(&["e2e4"], 0), opening_line(&["d2d4"], 5)],
+        };
+        let mut rng = StdRng::seed_from_u64(7);
+
+        assert_eq!(
+            select_repertoire_move(&repertoire, &[], &initial_position(), &mut rng),
+            Some("d2d4".to_string())
+        );
+    }
 }

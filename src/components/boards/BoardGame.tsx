@@ -25,12 +25,12 @@ import { open } from "@tauri-apps/plugin-dialog";
 import type { Piece } from "chessops";
 import { makeUci, parseUci } from "chessops";
 import { INITIAL_FEN } from "chessops/fen";
-import { useAtom, useAtomValue } from "jotai";
+import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import { useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { match } from "ts-pattern";
 import { useStore } from "zustand";
-import type { Outcome } from "@/bindings";
+import type { GameMove, Outcome } from "@/bindings";
 import {
   commands,
   type EngineLog,
@@ -53,15 +53,27 @@ import {
   gamePlayer1SettingsAtom,
   gamePlayer2SettingsAtom,
   gameSameTimeControlAtom,
+  humanBotHistoryAtom,
+  humanBotMeasurementsAtom,
   tabsAtom,
 } from "@/state/atoms";
 import { positionFromFen } from "@/utils/chessops";
+import { getPGN } from "@/utils/chess";
+import { buildHumanBotHistoryGame, EMPTY_HUMAN_BOT_HISTORY } from "@/utils/humanBotHistory";
 import {
   buildHumanBotEngineArgs,
   buildHumanBotEngineSettings,
+  buildHumanBotOpeningRepertoire,
+  buildHumanBotTiming,
+  buildHumanBotTraceHeaders,
   getHumanBotProfile,
   isMaiaEngine,
 } from "@/utils/humanBots";
+import {
+  buildHumanBotGameMeasurement,
+  buildHumanBotMeasurementHeaders,
+  type HumanBotMeasurementPlayer,
+} from "@/utils/humanBotMeasurements";
 import type { GameHeaders } from "@/utils/treeReducer";
 import { unwrap } from "@/utils/unwrap";
 import EngineLogsView from "../common/EngineLogsView";
@@ -73,6 +85,8 @@ import { TreeStateContext } from "../common/TreeStateContext";
 import Board from "./Board";
 import BoardControls from "./BoardControls";
 import EditingCard from "./EditingCard";
+import HumanBotHistoryPanel from "./HumanBotHistoryPanel";
+import HumanBotMeasurementsPanel from "./HumanBotMeasurementsPanel";
 import { OpponentForm, type OpponentSettings } from "./OpponentForm";
 
 function gameResultToOutcome(result: GameResult): Outcome {
@@ -93,6 +107,35 @@ function hasConfiguredPlayer(settings: OpponentSettings): boolean {
     return Boolean(settings.engine && isMaiaEngine(settings.engine));
   }
   return Boolean(settings.engine);
+}
+
+function toMeasurementPlayer(settings: OpponentSettings): HumanBotMeasurementPlayer | null {
+  if (settings.type !== "humanBot") return null;
+  return {
+    profile: getHumanBotProfile(settings.profileId),
+    humanTimingEnabled: settings.humanTiming ?? true,
+    timeControl: settings.timeControl,
+  };
+}
+
+function getHumanBotHistoryMatch(players: { white: OpponentSettings; black: OpponentSettings }) {
+  if (players.white.type === "human" && players.black.type === "humanBot") {
+    return {
+      player: players.white,
+      playerColor: "white" as const,
+      bot: players.black,
+      botColor: "black" as const,
+    };
+  }
+  if (players.black.type === "human" && players.white.type === "humanBot") {
+    return {
+      player: players.black,
+      playerColor: "black" as const,
+      bot: players.white,
+      botColor: "white" as const,
+    };
+  }
+  return null;
 }
 
 function mapBackendMoves(moves: { uci: string; clock: bigint | null }[]): BackendMove[] {
@@ -156,6 +199,9 @@ function BoardGame() {
   const [whiteTime, setWhiteTime] = useState<number | null>(null);
   const [blackTime, setBlackTime] = useState<number | null>(null);
   const [gameId, setGameId] = useAtom(currentGameIdAtom);
+  const setHistory = useSetAtom(humanBotHistoryAtom);
+  const setMeasurements = useSetAtom(humanBotMeasurementsAtom);
+  const historySavedRef = useRef(false);
 
   const [logsOpened, toggleLogsOpened] = useToggle();
   const [logsColor, setLogsColor] = useState<"white" | "black">("white");
@@ -309,6 +355,8 @@ function BoardGame() {
           name: setting.name,
           value: setting.value?.toString() ?? "",
         })),
+        openingRepertoire: buildHumanBotOpeningRepertoire(profile),
+        humanTiming: settings.humanTiming === false ? null : buildHumanBotTiming(profile),
         go: settings.timeControl ? null : { t: "Depth", c: 1 },
       };
     }
@@ -341,6 +389,7 @@ function BoardGame() {
   async function startGame() {
     const playerSettings = getPlayers();
     setPlayers(playerSettings);
+    historySavedRef.current = false;
 
     const boardOrientation =
       playerSettings.black.type === "human" && isEngineControlled(playerSettings.white)
@@ -422,16 +471,59 @@ function BoardGame() {
       const whiteTimeControl = formatTimeControl(playerSettings.white);
       const blackTimeControl = formatTimeControl(playerSettings.black);
       const sameTimeControl = whiteTimeControl === blackTimeControl;
+      const retainedOtherHeaders = Object.fromEntries(
+        Object.entries(headers.other ?? {}).filter(
+          ([key]) =>
+            key !== "HumanBotConfigVersion" &&
+            !key.startsWith("WhiteBot") &&
+            !key.startsWith("BlackBot"),
+        ),
+      );
+      const humanBotHeaders: Record<string, string> = {};
+
+      if (playerSettings.white.type === "humanBot") {
+        Object.assign(
+          humanBotHeaders,
+          buildHumanBotTraceHeaders(
+            getHumanBotProfile(playerSettings.white.profileId),
+            "White",
+            playerSettings.white.humanTiming ?? true,
+          ),
+        );
+      }
+      if (playerSettings.black.type === "humanBot") {
+        Object.assign(
+          humanBotHeaders,
+          buildHumanBotTraceHeaders(
+            getHumanBotProfile(playerSettings.black.profileId),
+            "Black",
+            playerSettings.black.humanTiming ?? true,
+          ),
+        );
+      }
 
       const newHeaders: Partial<GameHeaders> = {
         white: state.whitePlayer,
         black: state.blackPlayer,
+        white_elo:
+          playerSettings.white.type === "humanBot"
+            ? getHumanBotProfile(playerSettings.white.profileId).elo
+            : undefined,
+        black_elo:
+          playerSettings.black.type === "humanBot"
+            ? getHumanBotProfile(playerSettings.black.profileId).elo
+            : undefined,
         event: eventStr,
         site: "En Croissant",
         date: dateStr,
         time: timeStr,
         time_control: undefined,
         orientation: boardOrientation,
+        other: {
+          ...retainedOtherHeaders,
+          ...(hasHumanBot ? { HumanBotConfigVersion: "3" } : {}),
+          ...humanBotHeaders,
+        },
       };
 
       if (sameTimeControl) {
@@ -549,8 +641,77 @@ function BoardGame() {
 
       syncTreeWithMovesRef.current(mapBackendMoves(payload.moves));
 
+      const outcome = gameResultToOutcome(payload.result);
+      const recordedAt = new Date().toISOString();
+      const measurement = buildHumanBotGameMeasurement({
+        gameId: payload.gameId,
+        recordedAt,
+        result: outcome,
+        moves: payload.moves as GameMove[],
+        players: {
+          white: toMeasurementPlayer(players.white),
+          black: toMeasurementPlayer(players.black),
+        },
+      });
+
+      let finalHeaders: GameHeaders = {
+        ...store.getState().headers,
+        result: outcome,
+      };
+      if (measurement.bots.length > 0) {
+        setMeasurements((previous) => [...previous, measurement].slice(-1000));
+        finalHeaders = {
+          ...finalHeaders,
+          other: {
+            ...finalHeaders.other,
+            ...buildHumanBotMeasurementHeaders(measurement),
+          },
+        };
+      }
+      setHeaders(finalHeaders);
+
+      const historyMatch = getHumanBotHistoryMatch(players);
+      if (historyMatch && !historySavedRef.current) {
+        historySavedRef.current = true;
+        const profile = getHumanBotProfile(historyMatch.bot.profileId);
+        const pgn = getPGN(store.getState().root, {
+          headers: finalHeaders,
+          comments: true,
+          extraMarkups: true,
+          glyphs: true,
+          variations: true,
+        });
+        const timeControl =
+          (historyMatch.playerColor === "white"
+            ? finalHeaders.white_time_control
+            : finalHeaders.black_time_control) ??
+          finalHeaders.time_control ??
+          null;
+        const historyGame = buildHumanBotHistoryGame({
+          id: `${payload.gameId}-${recordedAt}`,
+          backendGameId: payload.gameId,
+          recordedAt,
+          profileId: profile.id,
+          profileName: profile.name,
+          botElo: profile.elo,
+          botColor: historyMatch.botColor,
+          playerName: historyMatch.player.name ?? "Player",
+          result: outcome,
+          timeControl,
+          plies: payload.moves.length,
+          pgn,
+        });
+        setHistory(async (previous) => {
+          const current = (await previous) ?? EMPTY_HUMAN_BOT_HISTORY;
+          return {
+            ...current,
+            games: [historyGame, ...current.games],
+          };
+        });
+      }
+
       setGameState("gameOver");
-      setResult(gameResultToOutcome(payload.result));
+      setResult(outcome);
     });
 
     return () => {
@@ -562,7 +723,18 @@ function BoardGame() {
       unlistenClock.then((f) => f());
       unlistenGameOver.then((f) => f());
     };
-  }, [gameId, gameState, scheduleUpdate, setGameState, setResult]);
+  }, [
+    gameId,
+    gameState,
+    scheduleUpdate,
+    players,
+    setGameState,
+    setHeaders,
+    setHistory,
+    setMeasurements,
+    setResult,
+    store,
+  ]);
 
   useEffect(() => {
     if (gameState === "playing" && gameId) {
@@ -785,6 +957,12 @@ function BoardGame() {
                               )}
                             </>
                           )}
+
+                          <Divider variant="dashed" />
+                          <HumanBotHistoryPanel />
+
+                          <Divider variant="dashed" />
+                          <HumanBotMeasurementsPanel />
                         </Stack>
                       </Paper>
                     </Stack>
