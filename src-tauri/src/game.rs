@@ -7,6 +7,7 @@ use std::{
     time::Instant,
 };
 
+use chrono::{SecondsFormat, Utc};
 use dashmap::DashMap;
 use log::{error, info};
 use pgn_reader::{BufferedReader, RawHeader, Skip, Visitor};
@@ -25,7 +26,10 @@ use tokio::{
 };
 
 use crate::{
-    engine::{parse_fen_to_position, BaseEngine, EngineLog, EngineOption, GoMode, PlayersTime},
+    engine::{
+        parse_fen_to_position, BaseEngine, EngineLaunchMetadata, EngineLog, EngineOption, GoMode,
+        PlayersTime,
+    },
     error::Error,
 };
 
@@ -45,6 +49,14 @@ pub enum PlayerConfig {
         name: String,
         path: String,
         #[serde(default)]
+        version: String,
+        #[serde(default, rename = "presetCategory")]
+        #[specta(rename = "presetCategory")]
+        preset_category: PlayerPresetCategory,
+        #[serde(default, rename = "targetElo")]
+        #[specta(rename = "targetElo")]
+        target_elo: Option<u32>,
+        #[serde(default)]
         args: Vec<String>,
         #[serde(default)]
         options: Vec<EngineOption>,
@@ -56,6 +68,17 @@ pub enum PlayerConfig {
         human_timing: Option<HumanTimingConfig>,
         go: Option<GoMode>,
     },
+}
+
+#[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, Type, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum PlayerPresetCategory {
+    #[default]
+    Custom,
+    HumanLike,
+    Limited,
+    Strong,
+    Reference,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, Type)]
@@ -100,7 +123,7 @@ pub struct TimeControl {
     pub increment: u64,
 }
 
-#[derive(Clone, Debug, Deserialize, Type)]
+#[derive(Clone, Debug, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct GameConfig {
     pub white: PlayerConfig,
@@ -113,7 +136,7 @@ pub struct GameConfig {
     pub opening_book: Option<OpeningBookConfig>,
 }
 
-#[derive(Clone, Debug, Deserialize, Type)]
+#[derive(Clone, Debug, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct OpeningBookConfig {
     pub path: String,
@@ -199,6 +222,38 @@ pub struct GameState {
     pub black_player: String,
 }
 
+#[derive(Clone, Debug, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct GameManifest {
+    pub schema_version: u32,
+    pub application_version: String,
+    pub game_id: GameId,
+    pub started_at: String,
+    pub exported_at: String,
+    pub hardware: ManifestHardware,
+    pub initial_fen: String,
+    pub initial_moves: Vec<String>,
+    pub white: PlayerConfig,
+    pub black: PlayerConfig,
+    pub white_engine_launch: Option<EngineLaunchMetadata>,
+    pub black_engine_launch: Option<EngineLaunchMetadata>,
+    pub white_time_control: Option<TimeControl>,
+    pub black_time_control: Option<TimeControl>,
+    pub opening_book: Option<OpeningBookConfig>,
+    pub status: GameStatus,
+    pub result: Option<GameResult>,
+    pub moves: Vec<GameMove>,
+    pub current_fen: String,
+}
+
+#[derive(Clone, Debug, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct ManifestHardware {
+    pub operating_system: String,
+    pub architecture: String,
+    pub logical_cpus: usize,
+}
+
 #[derive(Clone, Debug, Serialize, Type, Event)]
 #[serde(rename_all = "camelCase")]
 pub struct GameMoveEvent {
@@ -244,6 +299,9 @@ struct GameController {
     clock: Option<ClockState>,
     white_engine: Option<Arc<Mutex<BaseEngine>>>,
     black_engine: Option<Arc<Mutex<BaseEngine>>>,
+    white_engine_launch: Option<EngineLaunchMetadata>,
+    black_engine_launch: Option<EngineLaunchMetadata>,
+    started_at: String,
     shutdown_tx: Option<watch::Sender<bool>>,
     move_notify_tx: Option<tokio::sync::mpsc::Sender<()>>,
     engine_thinking: bool,
@@ -296,6 +354,9 @@ impl GameController {
             clock,
             white_engine: None,
             black_engine: None,
+            white_engine_launch: None,
+            black_engine_launch: None,
+            started_at: Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true),
             shutdown_tx: None,
             move_notify_tx: None,
             engine_thinking: false,
@@ -342,6 +403,42 @@ impl GameController {
             black_time,
             white_player,
             black_player,
+        }
+    }
+
+    fn get_manifest(&self) -> GameManifest {
+        let result = match &self.status {
+            GameStatus::Playing => None,
+            GameStatus::Finished { result } => Some(result.clone()),
+        };
+
+        GameManifest {
+            schema_version: 1,
+            application_version: env!("CARGO_PKG_VERSION").to_string(),
+            game_id: self.game_id.clone(),
+            started_at: self.started_at.clone(),
+            exported_at: Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true),
+            hardware: ManifestHardware {
+                operating_system: std::env::consts::OS.to_string(),
+                architecture: std::env::consts::ARCH.to_string(),
+                logical_cpus: std::thread::available_parallelism()
+                    .map(|value| value.get())
+                    .unwrap_or(1),
+            },
+            initial_fen: self.initial_fen.clone(),
+            initial_moves: self.config.initial_moves.clone(),
+            white: self.config.white.clone(),
+            black: self.config.black.clone(),
+            white_engine_launch: self.white_engine_launch.clone(),
+            black_engine_launch: self.black_engine_launch.clone(),
+            white_time_control: self.config.white_time_control.clone(),
+            black_time_control: self.config.black_time_control.clone(),
+            opening_book: self.config.opening_book.clone(),
+            status: self.status.clone(),
+            result,
+            moves: self.moves.clone(),
+            current_fen: Fen::from_position(self.position.clone(), EnPassantMode::Legal)
+                .to_string(),
         }
     }
 
@@ -657,7 +754,7 @@ impl GameManager {
         }
 
         let OpeningBookResult {
-            config,
+            mut config,
             polyglot_book,
             polyglot_max_ply,
         } = apply_opening_book(config)?;
@@ -670,6 +767,8 @@ impl GameManager {
                 .unwrap_or_default()
                 .as_setup(),
         );
+        normalize_game_engine_options(&mut config.white, castling_mode.is_chess960());
+        normalize_game_engine_options(&mut config.black, castling_mode.is_chess960());
 
         let mut controller = GameController::new(game_id.clone(), config.clone())?;
         controller.polyglot_book = polyglot_book;
@@ -685,7 +784,7 @@ impl GameManager {
             let mut engine = BaseEngine::spawn(PathBuf::from(path), args).await?;
             engine.init_uci().await?;
             for opt in options {
-                if opt.name == "UCI_Chess960" {
+                if opt.name == "UCI_Chess960" || opt.name == "MultiPV" {
                     continue;
                 }
                 engine.set_option(&opt.name, &opt.value).await?;
@@ -695,6 +794,9 @@ impl GameManager {
             } else {
                 engine.set_option("UCI_Chess960", "false").await?;
             }
+            engine.set_option("MultiPV", "1").await?;
+            engine.new_game().await?;
+            controller.white_engine_launch = Some(engine.launch_metadata());
             controller.white_engine = Some(Arc::new(Mutex::new(engine)));
         }
 
@@ -708,7 +810,7 @@ impl GameManager {
             let mut engine = BaseEngine::spawn(PathBuf::from(path), args).await?;
             engine.init_uci().await?;
             for opt in options {
-                if opt.name == "UCI_Chess960" {
+                if opt.name == "UCI_Chess960" || opt.name == "MultiPV" {
                     continue;
                 }
                 engine.set_option(&opt.name, &opt.value).await?;
@@ -718,6 +820,9 @@ impl GameManager {
             } else {
                 engine.set_option("UCI_Chess960", "false").await?;
             }
+            engine.set_option("MultiPV", "1").await?;
+            engine.new_game().await?;
+            controller.black_engine_launch = Some(engine.launch_metadata());
             controller.black_engine = Some(Arc::new(Mutex::new(engine)));
         }
 
@@ -751,6 +856,15 @@ impl GameManager {
             .ok_or_else(|| Error::GameNotFound(game_id.to_string()))?;
         let controller = game.read().await;
         Ok(controller.get_state())
+    }
+
+    pub async fn get_game_manifest(&self, game_id: &str) -> Result<GameManifest, Error> {
+        let game = self
+            .games
+            .get(game_id)
+            .ok_or_else(|| Error::GameNotFound(game_id.to_string()))?;
+        let controller = game.read().await;
+        Ok(controller.get_manifest())
     }
 
     pub async fn make_move(
@@ -935,6 +1049,27 @@ impl GameManager {
             Ok(Vec::new())
         }
     }
+}
+
+fn normalize_game_engine_options(player: &mut PlayerConfig, chess960: bool) {
+    let PlayerConfig::Engine { options, .. } = player else {
+        return;
+    };
+
+    upsert_engine_option(options, "MultiPV", "1");
+    upsert_engine_option(
+        options,
+        "UCI_Chess960",
+        if chess960 { "true" } else { "false" },
+    );
+}
+
+fn upsert_engine_option(options: &mut Vec<EngineOption>, name: &str, value: &str) {
+    options.retain(|option| option.name != name);
+    options.push(EngineOption {
+        name: name.to_string(),
+        value: value.to_string(),
+    });
 }
 
 impl Default for GameManager {
@@ -1749,11 +1884,16 @@ async fn request_engine_move(
             let (winc, binc) = ctrl
                 .clock
                 .as_ref()
-                .map(|c| (c.white_increment as u32, c.black_increment as u32))
+                .map(|c| {
+                    (
+                        clock_millis_to_uci(c.white_increment),
+                        clock_millis_to_uci(c.black_increment),
+                    )
+                })
                 .unwrap_or((0, 0));
 
-            let wt = white_time.unwrap_or(u64::MAX) as u32;
-            let bt = black_time.unwrap_or(u64::MAX) as u32;
+            let wt = white_time.map(clock_millis_to_uci).unwrap_or(u32::MAX);
+            let bt = black_time.map(clock_millis_to_uci).unwrap_or(u32::MAX);
             GoMode::PlayersTime(PlayersTime::new(wt, bt, winc, binc))
         } else {
             go.unwrap_or(GoMode::Depth(20))
@@ -1817,6 +1957,10 @@ async fn request_engine_move(
     }
 
     Ok(())
+}
+
+fn clock_millis_to_uci(value: u64) -> u32 {
+    u32::try_from(value).unwrap_or(u32::MAX)
 }
 
 #[tauri::command]
@@ -1891,6 +2035,15 @@ pub async fn get_game_engine_logs(
     state.game_manager.get_engine_logs(&game_id, &color).await
 }
 
+#[tauri::command]
+#[specta::specta]
+pub async fn get_game_manifest(
+    game_id: String,
+    state: tauri::State<'_, crate::AppState>,
+) -> Result<GameManifest, Error> {
+    state.game_manager.get_game_manifest(&game_id).await
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1915,6 +2068,9 @@ mod tests {
             "type": "engine",
             "name": "Luna",
             "path": "maia3.exe",
+            "version": "3.0",
+            "presetCategory": "humanLike",
+            "targetElo": 900,
             "openingRepertoire": {
                 "id": "luna-variety",
                 "maxPly": 12,
@@ -1937,6 +2093,9 @@ mod tests {
             PlayerConfig::Engine {
                 opening_repertoire: Some(repertoire),
                 human_timing: Some(timing),
+                version,
+                preset_category,
+                target_elo,
                 ..
             } => {
                 assert_eq!(repertoire.id, "luna-variety");
@@ -1946,6 +2105,9 @@ mod tests {
                 assert_eq!(repertoire.lines[0].weight, 5);
                 assert_eq!(timing.average_think_time_ms, 1200);
                 assert_eq!(timing.repertoire_time_percent, 45);
+                assert_eq!(version, "3.0");
+                assert_eq!(*preset_category, PlayerPresetCategory::HumanLike);
+                assert_eq!(*target_elo, Some(900));
             }
             _ => panic!("openingRepertoire was silently discarded"),
         }
@@ -1955,6 +2117,105 @@ mod tests {
         assert!(serialized.get("opening_repertoire").is_none());
         assert!(serialized.get("humanTiming").is_some());
         assert!(serialized.get("human_timing").is_none());
+    }
+
+    #[test]
+    fn manifest_preserves_reproducible_position_player_and_resource_inputs() {
+        let config = GameConfig {
+            white: PlayerConfig::Human {
+                name: "Player".to_string(),
+            },
+            black: PlayerConfig::Engine {
+                name: "Stockfish 18".to_string(),
+                path: "stockfish.exe".to_string(),
+                version: "18".to_string(),
+                preset_category: PlayerPresetCategory::Reference,
+                target_elo: None,
+                args: Vec::new(),
+                options: vec![
+                    EngineOption {
+                        name: "Threads".to_string(),
+                        value: "1".to_string(),
+                    },
+                    EngineOption {
+                        name: "Hash".to_string(),
+                        value: "256".to_string(),
+                    },
+                ],
+                opening_repertoire: None,
+                human_timing: None,
+                go: Some(GoMode::Depth(24)),
+            },
+            white_time_control: None,
+            black_time_control: None,
+            initial_fen: None,
+            initial_moves: vec!["e2e4".to_string()],
+            opening_book: None,
+        };
+        let controller = GameController::new("manifest-test".to_string(), config).unwrap();
+        let manifest = controller.get_manifest();
+
+        assert_eq!(manifest.schema_version, 1);
+        assert_eq!(manifest.initial_moves, ["e2e4"]);
+        assert_eq!(manifest.moves.len(), 1);
+        assert_eq!(manifest.moves[0].source, GameMoveSource::Initial);
+        assert!(manifest.result.is_none());
+        assert!(manifest.hardware.logical_cpus >= 1);
+        match manifest.black {
+            PlayerConfig::Engine {
+                version,
+                preset_category,
+                options,
+                go,
+                ..
+            } => {
+                assert_eq!(version, "18");
+                assert_eq!(preset_category, PlayerPresetCategory::Reference);
+                assert!(options.iter().any(|option| option.name == "Threads"));
+                assert_eq!(go, Some(GoMode::Depth(24)));
+            }
+            _ => panic!("black player must remain an engine"),
+        }
+    }
+
+    #[test]
+    fn normalized_game_options_record_effective_multipv_and_variant() {
+        let mut player = PlayerConfig::Engine {
+            name: "Engine".to_string(),
+            path: "engine".to_string(),
+            version: String::new(),
+            preset_category: PlayerPresetCategory::Custom,
+            target_elo: None,
+            args: Vec::new(),
+            options: vec![
+                EngineOption {
+                    name: "MultiPV".to_string(),
+                    value: "8".to_string(),
+                },
+                EngineOption {
+                    name: "MultiPV".to_string(),
+                    value: "4".to_string(),
+                },
+            ],
+            opening_repertoire: None,
+            human_timing: None,
+            go: Some(GoMode::Depth(12)),
+        };
+
+        normalize_game_engine_options(&mut player, true);
+
+        let PlayerConfig::Engine { options, .. } = player else {
+            panic!("player must remain an engine");
+        };
+        let multipv = options
+            .iter()
+            .filter(|option| option.name == "MultiPV")
+            .collect::<Vec<_>>();
+        assert_eq!(multipv.len(), 1);
+        assert_eq!(multipv[0].value, "1");
+        assert!(options
+            .iter()
+            .any(|option| { option.name == "UCI_Chess960" && option.value == "true" }));
     }
 
     #[test]
@@ -2015,6 +2276,14 @@ mod tests {
 
         assert!(target < 500);
         assert!(target <= 850);
+    }
+
+    #[test]
+    fn uci_clock_conversion_saturates_instead_of_wrapping() {
+        assert_eq!(clock_millis_to_uci(180_000), 180_000);
+        assert_eq!(clock_millis_to_uci(u32::MAX as u64), u32::MAX);
+        assert_eq!(clock_millis_to_uci(u32::MAX as u64 + 1), u32::MAX);
+        assert_eq!(clock_millis_to_uci(u64::MAX), u32::MAX);
     }
 
     #[test]

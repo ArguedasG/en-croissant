@@ -438,6 +438,14 @@ async getGameEngineLogs(gameId: string, color: string) : Promise<Result<EngineLo
     else return { status: "error", error: e  as any };
 }
 },
+async getGameManifest(gameId: string) : Promise<Result<GameManifest, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_game_manifest", { gameId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async preloadReferenceDb(file: string) : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("preload_reference_db", { file }) };
@@ -496,12 +504,14 @@ export type DatabaseProgress = { id: string; progress: number }
 export type DrawReason = "stalemate" | "insufficientMaterial" | "threefoldRepetition" | "fiftyMoveRule" | "agreement"
 export type EngineConfig = { name: string; options: UciOptionConfig[] }
 export type EngineLog = { type: "gui"; value: string } | { type: "engine"; value: string }
+export type EngineLaunchMetadata = { path: string; resolvedArgs: string[]; randomSeed: number | null }
 export type EngineOption = { name: string; value: string }
 export type EngineOptions = { fen: string; moves: string[]; extraOptions: EngineOption[] }
 export type Event = { id: number; name: string | null }
 export type FileMetadata = { last_modified: number }
 export type GameConfig = { white: PlayerConfig; black: PlayerConfig; whiteTimeControl: TimeControl | null; blackTimeControl: TimeControl | null; initialFen: string | null; initialMoves?: string[]; openingBook: OpeningBookConfig | null }
 export type GameEndReason = "checkmate" | "timeout" | "resignation" | "abandonment"
+export type GameManifest = { schemaVersion: number; applicationVersion: string; gameId: string; startedAt: string; exportedAt: string; hardware: ManifestHardware; initialFen: string; initialMoves: string[]; white: PlayerConfig; black: PlayerConfig; whiteEngineLaunch: EngineLaunchMetadata | null; blackEngineLaunch: EngineLaunchMetadata | null; whiteTimeControl: TimeControl | null; blackTimeControl: TimeControl | null; openingBook: OpeningBookConfig | null; status: GameStatus; result: GameResult | null; moves: GameMove[]; currentFen: string }
 export type GameMove = { uci: string; san: string; fenAfter: string; clock: bigint | null; whiteTime: bigint | null; blackTime: bigint | null; color: string; source: GameMoveSource; thinkTimeMs: bigint | null }
 export type GameMoveEvent = { gameId: string; moves: GameMove[]; fen: string; whiteTime: bigint | null; blackTime: bigint | null }
 export type GameMoveSource = "human" | "engine" | "profileRepertoire" | "polyglot" | "initial"
@@ -514,6 +524,7 @@ export type GameState = { gameId: string; status: GameStatus; initialFen: string
 export type GameStatus = "playing" | { finished: { result: GameResult } }
 export type GoMode = { t: "PlayersTime"; c: PlayersTime } | { t: "Depth"; c: number } | { t: "Time"; c: number } | { t: "Nodes"; c: number } | { t: "Infinite" }
 export type HumanTimingConfig = { minThinkTimeMs: number; averageThinkTimeMs: number; maxThinkTimeMs: number; repertoireTimePercent: number }
+export type ManifestHardware = { operatingSystem: string; architecture: string; logicalCpus: number }
 export type MoveAnalysis = { best: BestMoves[]; novelty: boolean; is_sacrifice: boolean }
 export type NormalizedGame = { id: number; fen: string; event: string; event_id: number; site: string; site_id: number; date?: string | null; time?: string | null; round?: string | null; white: string; white_id: number; white_elo?: number | null; black: string; black_id: number; black_elo?: number | null; result: Outcome; time_control?: string | null; eco?: string | null; ply_count?: number | null; moves: string }
 export type OpeningBookConfig = { path: string; maxPly?: bigint }
@@ -521,10 +532,11 @@ export type OpeningRepertoireConfig = { id: string; maxPly?: number; lines?: Wei
 export type OutOpening = { name: string; fen: string }
 export type Outcome = "1-0" | "0-1" | "1/2-1/2" | "*"
 export type Player = { id: number; name: string | null; elo: number | null }
-export type PlayerConfig = { type: "human"; name: string } | { type: "engine"; name: string; path: string; args?: string[]; options?: EngineOption[]; openingRepertoire?: OpeningRepertoireConfig | null; humanTiming?: HumanTimingConfig | null; go: GoMode | null }
+export type PlayerConfig = { type: "human"; name: string } | { type: "engine"; name: string; path: string; version?: string; presetCategory?: PlayerPresetCategory; targetElo?: number | null; args?: string[]; options?: EngineOption[]; openingRepertoire?: OpeningRepertoireConfig | null; humanTiming?: HumanTimingConfig | null; go: GoMode | null }
 export type PlayerGameInfo = { site_stats_data: SiteStatsData[] }
 export type PlayerQuery = { options: QueryOptions<PlayerSort>; name?: string | null; range?: [number, number] | null }
 export type PlayerSort = "id" | "name" | "elo"
+export type PlayerPresetCategory = "custom" | "humanLike" | "limited" | "strong" | "reference"
 export type PlayersTime = { white: number; black: number; winc: number; binc: number }
 export type PositionQueryJs = { fen: string; type_: string }
 export type PositionStats = { move: string; white: number; draw: number; black: number }

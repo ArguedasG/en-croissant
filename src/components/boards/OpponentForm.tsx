@@ -5,6 +5,7 @@ import {
   Divider,
   Group,
   InputWrapper,
+  NumberInput,
   Paper,
   SegmentedControl,
   Select,
@@ -21,6 +22,12 @@ import TimeInput, { type TimeType } from "@/components/common/TimeInput";
 import EngineSettingsForm from "@/components/panels/analysis/EngineSettingsForm";
 import type { TimeControlField } from "@/utils/clock";
 import type { EngineSettings, LocalEngine } from "@/utils/engines";
+import {
+  applyEnginePlayerPreset,
+  ENGINE_PLAYER_PRESETS,
+  getEnginePresetDescription,
+  type EnginePlayerPresetId,
+} from "@/utils/enginePresets";
 import {
   DEFAULT_HUMAN_BOT_PROFILE_ID,
   getHumanBotProfile,
@@ -46,6 +53,8 @@ export type OpponentSettings =
       engine: LocalEngine | null;
       go: GoMode;
       engineSettings?: EngineSettings;
+      presetId?: EnginePlayerPresetId;
+      targetElo?: number;
       timeUnit?: TimeType;
       incrementUnit?: TimeType;
     }
@@ -95,6 +104,8 @@ export function OpponentForm({
         type: "engine",
         engine: "engine" in prev ? prev.engine : null,
         go: ("go" in prev && prev.go) || { t: "Depth", c: 24 },
+        presetId: prev.type === "engine" ? (prev.presetId ?? "custom") : "custom",
+        targetElo: prev.type === "engine" ? (prev.targetElo ?? 1800) : 1800,
       }));
     } else {
       setOpponent((prev) => {
@@ -200,16 +211,95 @@ export function OpponentForm({
       )}
 
       {opponent.type === "engine" && (
-        <EnginesSelect
-          engine={opponent.engine}
-          setEngine={(engine) =>
-            setOpponent((prev) => ({
-              ...prev,
-              engine,
-              engineSettings: engine?.settings || undefined,
-            }))
-          }
-        />
+        <Stack gap="sm">
+          <EnginesSelect
+            engine={opponent.engine}
+            setEngine={(engine) =>
+              setOpponent((prev) => {
+                if (prev.type !== "engine") return prev;
+                const presetId = prev.presetId ?? "custom";
+                const applied = applyEnginePlayerPreset(
+                  engine?.settings ?? [],
+                  prev.go,
+                  presetId,
+                  prev.targetElo ?? 1800,
+                );
+                return {
+                  ...prev,
+                  engine,
+                  engineSettings: applied.settings,
+                  go: applied.go,
+                  presetId,
+                };
+              })
+            }
+          />
+          <Select
+            allowDeselect={false}
+            label={t("EnginePresets.Category", "Player/engine category")}
+            data={ENGINE_PLAYER_PRESETS.map((preset) => ({
+              value: preset.id,
+              label: t(`EnginePresets.${preset.id}.Label`, preset.label),
+            }))}
+            value={opponent.presetId ?? "custom"}
+            onChange={(value) =>
+              setOpponent((prev) => {
+                if (prev.type !== "engine" || !value) return prev;
+                const presetId = value as EnginePlayerPresetId;
+                const applied = applyEnginePlayerPreset(
+                  prev.engineSettings ?? prev.engine?.settings ?? [],
+                  prev.go,
+                  presetId,
+                  prev.targetElo ?? 1800,
+                );
+                return {
+                  ...prev,
+                  presetId,
+                  engineSettings: applied.settings,
+                  go: applied.go,
+                };
+              })
+            }
+          />
+          {opponent.presetId === "limited" && (
+            <NumberInput
+              label={t("EnginePresets.RequestedElo", "ELO requested from the engine")}
+              description={t(
+                "EnginePresets.RequestedElo.Desc",
+                "UCI target; it is not a playing strength calibrated by Chess Lab.",
+              )}
+              min={1320}
+              max={3190}
+              step={50}
+              value={opponent.targetElo ?? 1800}
+              onChange={(value) => {
+                if (typeof value !== "number") return;
+                setOpponent((prev) => {
+                  if (prev.type !== "engine") return prev;
+                  const targetElo = Math.max(1320, Math.min(3190, Math.trunc(value)));
+                  const applied = applyEnginePlayerPreset(
+                    prev.engineSettings ?? prev.engine?.settings ?? [],
+                    prev.go,
+                    "limited",
+                    targetElo,
+                  );
+                  return {
+                    ...prev,
+                    targetElo,
+                    engineSettings: applied.settings,
+                    go: applied.go,
+                  };
+                });
+              }}
+            />
+          )}
+          <Text size="xs" c="dimmed">
+            {t(
+              `EnginePresets.${opponent.presetId ?? "custom"}.Desc`,
+              getEnginePresetDescription(opponent.presetId ?? "custom"),
+            )}
+          </Text>
+        </Stack>
       )}
 
       {opponent.type === "humanBot" && (
@@ -408,6 +498,7 @@ export function OpponentForm({
                   return {
                     ...prev,
                     go,
+                    presetId: "custom",
                   };
                 })
               }
@@ -440,6 +531,7 @@ export function OpponentForm({
                     ...prev,
                     go: newSettings.go,
                     engineSettings: newSettings.settings,
+                    presetId: "custom",
                   };
                 })
               }

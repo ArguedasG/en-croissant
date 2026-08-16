@@ -46,8 +46,8 @@ use crate::db::{
     preload_reference_db, search_position, MmapSearchIndex,
 };
 use crate::game::{
-    abort_game, get_game_engine_logs, get_game_state, make_game_move, resign_game, start_game,
-    take_back_game_move, ClockUpdateEvent, GameMoveEvent, GameOverEvent,
+    abort_game, get_game_engine_logs, get_game_manifest, get_game_state, make_game_move,
+    resign_game, start_game, take_back_game_move, ClockUpdateEvent, GameMoveEvent, GameOverEvent,
 };
 
 use crate::fs::set_file_as_executable;
@@ -165,6 +165,7 @@ fn main() {
             resign_game,
             abort_game,
             get_game_engine_logs,
+            get_game_manifest,
             preload_reference_db,
             get_progress,
             clear_progress,

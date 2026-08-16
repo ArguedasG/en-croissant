@@ -42,12 +42,21 @@ pub enum EngineLog {
 
 pub type EngineReader = Lines<BufReader<ChildStdout>>;
 
+#[derive(Debug, Clone, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct EngineLaunchMetadata {
+    pub path: String,
+    pub resolved_args: Vec<String>,
+    pub random_seed: Option<u32>,
+}
+
 pub struct BaseEngine {
     pub stdin: ChildStdin,
     pub reader: Option<EngineReader>,
     #[allow(dead_code)]
     child: Child,
     logs: Vec<EngineLog>,
+    launch_metadata: EngineLaunchMetadata,
 }
 
 impl BaseEngine {
@@ -96,6 +105,11 @@ impl BaseEngine {
                     resolved_args.len()
                 ),
             })],
+            launch_metadata: EngineLaunchMetadata {
+                path: path.display().to_string(),
+                resolved_args,
+                random_seed,
+            },
         })
     }
 
@@ -109,6 +123,10 @@ impl BaseEngine {
 
     pub fn get_logs(&self) -> Vec<EngineLog> {
         self.logs.clone()
+    }
+
+    pub fn launch_metadata(&self) -> EngineLaunchMetadata {
+        self.launch_metadata.clone()
     }
 
     fn log_gui(&mut self, cmd: &str) {
@@ -128,6 +146,15 @@ impl BaseEngine {
         tokio::time::timeout(UCI_HANDSHAKE_TIMEOUT, self.wait_for("uciok"))
             .await
             .map_err(|_| Error::EngineTimeout("uciok".to_string()))??;
+        self.send("isready").await?;
+        tokio::time::timeout(UCI_READY_TIMEOUT, self.wait_for("readyok"))
+            .await
+            .map_err(|_| Error::EngineTimeout("readyok".to_string()))??;
+        Ok(())
+    }
+
+    pub async fn new_game(&mut self) -> Result<(), Error> {
+        self.send("ucinewgame").await?;
         self.send("isready").await?;
         tokio::time::timeout(UCI_READY_TIMEOUT, self.wait_for("readyok"))
             .await
@@ -217,7 +244,33 @@ impl Drop for BaseEngine {
 
 #[cfg(test)]
 mod tests {
-    use super::{resolve_launch_args, RANDOM_SEED_PLACEHOLDER};
+    use std::{
+        env,
+        io::{self, BufRead, Write},
+    };
+
+    use shakmaty::{uci::UciMove, Position, Role};
+
+    use super::{resolve_launch_args, BaseEngine, EngineLog, RANDOM_SEED_PLACEHOLDER};
+    use crate::engine::{parse_fen_to_position, GoMode};
+
+    const TACTICAL_CASES: [(&str, &str, &[&str]); 3] = [
+        (
+            "Fool's mate",
+            "rnbqkbnr/pppp1ppp/8/4p3/6P1/5P2/PPPPP2P/RNBQKBNR b KQkq g3 0 2",
+            &["d8h4"],
+        ),
+        (
+            "Back-rank mate",
+            "6k1/5ppp/8/8/8/8/5PPP/3R2K1 w - - 0 1",
+            &["d1d8"],
+        ),
+        (
+            "Hanging queen",
+            "4k3/8/8/8/8/8/4q3/4R1K1 w - - 0 1",
+            &["e1e2"],
+        ),
+    ];
 
     #[test]
     fn resolves_random_seed_argument_without_touching_other_arguments() {
@@ -236,5 +289,152 @@ mod tests {
         assert!(resolved[2].parse::<u32>().is_ok());
         assert_eq!(resolved[3], "--device=cpu");
         assert_eq!(resolved[2], random_seed.unwrap().to_string());
+    }
+
+    #[test]
+    fn tactical_suite_positions_and_expected_moves_are_valid() {
+        for (name, fen, expected_moves) in TACTICAL_CASES {
+            let position = parse_fen_to_position(fen).unwrap();
+            for expected_move in expected_moves {
+                let uci = UciMove::from_ascii(expected_move.as_bytes()).unwrap();
+                let mv = uci.to_move(&position).unwrap();
+
+                if name == "Hanging queen" {
+                    assert_eq!(mv.capture(), Some(Role::Queen));
+                } else {
+                    let mut result = position.clone();
+                    result.play_unchecked(&mv);
+                    assert!(result.is_checkmate(), "{name}: {expected_move} is not mate");
+                }
+            }
+        }
+    }
+
+    #[test]
+    #[ignore = "helper process for the UCI protocol regression test"]
+    fn mock_uci_engine() {
+        if env::var_os("CHESS_LAB_MOCK_UCI").is_none() {
+            return;
+        }
+
+        let stdin = io::stdin();
+        let mut stdout = io::stdout();
+
+        for line in stdin.lock().lines() {
+            let line = line.expect("mock engine must read stdin");
+            match line.as_str() {
+                "uci" => {
+                    writeln!(stdout, "id name Chess Lab mock engine").unwrap();
+                    writeln!(
+                        stdout,
+                        "option name MultiPV type spin default 1 min 1 max 4"
+                    )
+                    .unwrap();
+                    writeln!(stdout, "uciok").unwrap();
+                }
+                "isready" => {
+                    writeln!(stdout, "readyok").unwrap();
+                }
+                command if command.starts_with("go ") => {
+                    writeln!(stdout, "info depth 1 score cp 0 nodes 1 nps 1 pv e7e5").unwrap();
+                    writeln!(stdout, "bestmove e7e5").unwrap();
+                }
+                "quit" => break,
+                _ => {}
+            }
+            stdout.flush().unwrap();
+        }
+    }
+
+    #[tokio::test]
+    async fn game_protocol_initializes_resets_and_searches_in_order() {
+        let path = env::current_exe().expect("test executable path must be available");
+        let args = vec![
+            "--ignored".to_string(),
+            "--exact".to_string(),
+            "engine::process::tests::mock_uci_engine".to_string(),
+            "--nocapture".to_string(),
+        ];
+        env::set_var("CHESS_LAB_MOCK_UCI", "1");
+        let mut engine = BaseEngine::spawn(path, &args).await.unwrap();
+        env::remove_var("CHESS_LAB_MOCK_UCI");
+
+        engine.init_uci().await.unwrap();
+        engine.set_option("Threads", 1).await.unwrap();
+        engine.set_option("Hash", 16).await.unwrap();
+        engine.set_option("MultiPV", 1).await.unwrap();
+        engine.new_game().await.unwrap();
+        engine
+            .set_position(
+                "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+                &["e2e4".to_string()],
+            )
+            .await
+            .unwrap();
+        engine.go(&GoMode::Depth(24)).await.unwrap();
+
+        assert_eq!(engine.wait_for_bestmove().await.unwrap(), "e7e5");
+
+        let gui_commands = engine
+            .get_logs()
+            .into_iter()
+            .filter_map(|log| match log {
+                EngineLog::Gui(command) => Some(command.trim().to_string()),
+                EngineLog::Engine(_) => None,
+            })
+            .collect::<Vec<_>>();
+        let expected = [
+            "uci",
+            "isready",
+            "setoption name Threads value 1",
+            "setoption name Hash value 16",
+            "setoption name MultiPV value 1",
+            "ucinewgame",
+            "isready",
+            "position fen rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1 moves e2e4",
+            "go depth 24",
+        ];
+
+        assert!(
+            gui_commands
+                .windows(expected.len())
+                .any(|commands| commands == expected),
+            "unexpected UCI command order: {gui_commands:?}"
+        );
+
+        engine.quit().await.unwrap();
+    }
+
+    #[tokio::test]
+    #[ignore = "requires CHESS_LAB_REFERENCE_ENGINE pointing to a strong UCI engine"]
+    async fn reference_engine_solves_elementary_tactical_suite() {
+        let Some(path) = env::var_os("CHESS_LAB_REFERENCE_ENGINE") else {
+            eprintln!("CHESS_LAB_REFERENCE_ENGINE is not configured; skipping external audit");
+            return;
+        };
+        let mut engine = BaseEngine::spawn(path.into(), &[]).await.unwrap();
+
+        engine.init_uci().await.unwrap();
+        engine.set_option("Threads", 1).await.unwrap();
+        engine.set_option("Hash", 16).await.unwrap();
+        engine.set_option("MultiPV", 1).await.unwrap();
+        engine
+            .set_option("UCI_LimitStrength", "false")
+            .await
+            .unwrap();
+        engine.set_option("Skill Level", 20).await.unwrap();
+
+        for (name, fen, expected_moves) in TACTICAL_CASES {
+            engine.new_game().await.unwrap();
+            engine.set_position(fen, &[]).await.unwrap();
+            engine.go(&GoMode::Depth(12)).await.unwrap();
+            let best_move = engine.wait_for_bestmove().await.unwrap();
+            assert!(
+                expected_moves.contains(&best_move.as_str()),
+                "{name}: expected one of {expected_moves:?}, got {best_move}"
+            );
+        }
+
+        engine.quit().await.unwrap();
     }
 }

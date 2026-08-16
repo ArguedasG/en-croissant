@@ -16,12 +16,14 @@ import {
 import { useToggle } from "@mantine/hooks";
 import {
   IconArrowsExchange,
+  IconFileExport,
   IconFileText,
   IconPlus,
   IconX,
   IconZoomCheck,
 } from "@tabler/icons-react";
-import { open } from "@tauri-apps/plugin-dialog";
+import { open, save } from "@tauri-apps/plugin-dialog";
+import { writeTextFile } from "@tauri-apps/plugin-fs";
 import type { Piece } from "chessops";
 import { makeUci, parseUci } from "chessops";
 import { INITIAL_FEN } from "chessops/fen";
@@ -59,6 +61,7 @@ import {
 } from "@/state/atoms";
 import { positionFromFen } from "@/utils/chessops";
 import { getPGN } from "@/utils/chess";
+import { serializeGameManifest } from "@/utils/gameManifest";
 import { buildHumanBotHistoryGame, EMPTY_HUMAN_BOT_HISTORY } from "@/utils/humanBotHistory";
 import {
   buildHumanBotEngineArgs,
@@ -350,6 +353,9 @@ function BoardGame() {
         type: "engine",
         name: profile.name,
         path: settings.engine?.path ?? "",
+        version: settings.engine?.version ?? "",
+        presetCategory: "humanLike",
+        targetElo: profile.elo,
         args: buildHumanBotEngineArgs(settings.engine?.args ?? []),
         options: engineSettings.map((setting) => ({
           name: setting.name,
@@ -365,6 +371,9 @@ function BoardGame() {
       type: "engine",
       name: settings.engine?.name ?? "Engine",
       path: settings.engine?.path ?? "",
+      version: settings.engine?.version ?? "",
+      presetCategory: settings.presetId ?? "custom",
+      targetElo: settings.presetId === "limited" ? (settings.targetElo ?? 1800) : null,
       args: settings.engine?.args ?? [],
       options: (settings.engineSettings ?? settings.engine?.settings ?? []).map((s) => ({
         name: s.name,
@@ -821,6 +830,20 @@ function BoardGame() {
     }
   }
 
+  async function exportGameManifest() {
+    if (!gameId) return;
+    const result = await commands.getGameManifest(gameId);
+    if (result.status === "error") return;
+
+    const file = await save({
+      defaultPath: "chess-lab-game-manifest.json",
+      filters: [{ name: "JSON", extensions: ["json"] }],
+    });
+    if (!file) return;
+
+    await writeTextFile(file, serializeGameManifest(result.data));
+  }
+
   return (
     <>
       <Portal target="#left" style={{ height: "100%" }}>
@@ -1009,13 +1032,22 @@ function BoardGame() {
                     </Button>
 
                     {hasEngine && (
-                      <Button
-                        variant="default"
-                        onClick={() => toggleLogsOpened()}
-                        leftSection={<IconFileText size="1rem" />}
-                      >
-                        Engine Logs
-                      </Button>
+                      <>
+                        <Button
+                          variant="default"
+                          onClick={exportGameManifest}
+                          leftSection={<IconFileExport size="1rem" />}
+                        >
+                          {t("GameManifest.Export", "Export manifest")}
+                        </Button>
+                        <Button
+                          variant="default"
+                          onClick={() => toggleLogsOpened()}
+                          leftSection={<IconFileText size="1rem" />}
+                        >
+                          Engine Logs
+                        </Button>
+                      </>
                     )}
                   </Group>
                 </Stack>
