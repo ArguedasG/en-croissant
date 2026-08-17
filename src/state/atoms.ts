@@ -301,6 +301,53 @@ export const gamePlayer2SettingsAtom = atomWithStorage<OpponentSettings>(
     defaultPlayerSettings,
 );
 
+const defaultModelGamePlayerSettings: OpponentSettings = {
+    type: "engine",
+    engine: null,
+    go: { t: "Depth", c: 18 },
+    presetId: "strong",
+    targetElo: 1800,
+    seed: 1,
+};
+
+export const modelGameWhiteSettingsAtom = atomWithStorage<OpponentSettings>(
+    "model-game-white-settings",
+    defaultModelGamePlayerSettings,
+);
+
+export const modelGameBlackSettingsAtom = atomWithStorage<OpponentSettings>(
+    "model-game-black-settings",
+    { ...defaultModelGamePlayerSettings, seed: 2 },
+);
+
+export type ModelGameBatchSettings = {
+    enabled: boolean;
+    gameCount: number;
+    alternateColors: boolean;
+    seedStep: number;
+    concurrency: number;
+    maxCpuThreads: number;
+    maxMemoryMb: number;
+    maxRetries: number;
+};
+
+export const modelGameBatchSettingsAtom = atomWithStorage<ModelGameBatchSettings>(
+    "model-game-batch-settings",
+    {
+        enabled: false,
+        gameCount: 2,
+        alternateColors: true,
+        seedStep: 1,
+        concurrency: 1,
+        maxCpuThreads: Math.max(2, navigator.hardwareConcurrency || 4),
+        maxMemoryMb: 512,
+        maxRetries: 1,
+    },
+);
+
+const modelGameBatchIdFamily = atomFamily((_tab: string) => atom<string | null>(null));
+export const currentModelGameBatchIdAtom = tabValue(modelGameBatchIdFamily);
+
 export const gameSameTimeControlAtom = atomWithStorage<boolean>("game-same-time-control", true);
 
 export const gameOpeningBookPathAtom = atomWithStorage<string | null>(

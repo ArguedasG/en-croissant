@@ -11,6 +11,8 @@ mod game;
 
 mod fs;
 mod lexer;
+mod model_game_batch;
+mod model_game_experiment;
 mod oauth;
 mod opening;
 mod pgn;
@@ -26,6 +28,13 @@ use dashmap::DashMap;
 use db::{DatabaseProgress, GameQuery, NormalizedGame, PositionStats};
 use derivative::Derivative;
 use game::GameManager;
+use model_game_batch::ModelGameBatchManager;
+use model_game_experiment::{
+    delete_model_game_experiment, export_model_game_experiment,
+    finalize_single_model_game_experiment, finalize_single_model_game_experiments_for_owner,
+    get_model_game_experiment, list_model_game_experiments, read_model_game_experiment_game,
+    start_single_model_game_experiment,
+};
 use progress::{clear_progress, get_progress, ProgressEvent, ProgressStore};
 
 use log::LevelFilter;
@@ -48,6 +57,11 @@ use crate::db::{
 use crate::game::{
     abort_game, get_game_engine_logs, get_game_manifest, get_game_state, make_game_move,
     resign_game, start_game, take_back_game_move, ClockUpdateEvent, GameMoveEvent, GameOverEvent,
+};
+use crate::model_game_batch::{
+    cancel_model_game_batch, cancel_model_game_batches_for_owner, dismiss_model_game_batch,
+    get_model_game_batch, pause_model_game_batch, resume_model_game_batch, start_model_game_batch,
+    ModelGameBatchEvent,
 };
 
 use crate::fs::set_file_as_executable;
@@ -91,7 +105,8 @@ pub struct AppState {
     engine_processes: DashMap<(String, String), Arc<tokio::sync::Mutex<EngineProcess>>>,
     analysis_cancel_flags: DashMap<String, Arc<AtomicBool>>,
     auth: AuthState,
-    game_manager: GameManager,
+    game_manager: Arc<GameManager>,
+    model_game_batch_manager: ModelGameBatchManager,
     progress_state: ProgressStore,
 }
 
@@ -166,6 +181,21 @@ fn main() {
             abort_game,
             get_game_engine_logs,
             get_game_manifest,
+            start_model_game_batch,
+            get_model_game_batch,
+            pause_model_game_batch,
+            resume_model_game_batch,
+            cancel_model_game_batch,
+            cancel_model_game_batches_for_owner,
+            dismiss_model_game_batch,
+            list_model_game_experiments,
+            get_model_game_experiment,
+            read_model_game_experiment_game,
+            delete_model_game_experiment,
+            export_model_game_experiment,
+            start_single_model_game_experiment,
+            finalize_single_model_game_experiment,
+            finalize_single_model_game_experiments_for_owner,
             preload_reference_db,
             get_progress,
             clear_progress,
@@ -177,7 +207,8 @@ fn main() {
             ProgressEvent,
             GameMoveEvent,
             ClockUpdateEvent,
-            GameOverEvent
+            GameOverEvent,
+            ModelGameBatchEvent
         ));
 
     #[cfg(debug_assertions)]
@@ -216,6 +247,11 @@ fn main() {
         .plugin(tauri_plugin_os::init())
         .setup(move |app| {
             log::info!("Setting up application");
+
+            if let Err(error) = model_game_experiment::recover_interrupted_experiments(app.handle())
+            {
+                log::warn!("Could not recover interrupted model game experiments: {error}");
+            }
 
             // #[cfg(any(windows, target_os = "macos"))]
             // set_shadow(&app.get_webview_window("main").unwrap(), true).unwrap();
@@ -256,6 +292,8 @@ fn main() {
                         process.kill_sync();
                     }
                 }
+                state.model_game_batch_manager.cancel_all_sync();
+                state.game_manager.kill_all_sync();
             }
         });
 }

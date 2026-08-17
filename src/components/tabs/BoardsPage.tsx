@@ -66,8 +66,10 @@ export default function BoardsPage() {
           }
         }
         setTabs((prev) => prev.filter((tab) => tab.value !== value));
+        await commands.finalizeSingleModelGameExperimentsForOwner(value);
         unwrap(await commands.killEngines(value));
         await commands.abortGame(`${value}-game`);
+        await commands.cancelModelGameBatchesForOwner(value);
       }
     },
     [tabs, activeTab, setTabs, toggleSaveModal, setActiveTab],
@@ -314,6 +316,17 @@ function TabSwitch({
           resize={{ minimumPaneSizePercentage: 0 }}
         />
         <BoardGame />
+      </TreeStateProvider>
+    ))
+    .with("generator", () => (
+      <TreeStateProvider id={tab.value}>
+        <Mosaic<ViewId>
+          renderTile={(id) => fullLayout[id]}
+          value={windowsState.currentNode}
+          onChange={(currentNode) => setWindowsState({ currentNode })}
+          resize={{ minimumPaneSizePercentage: 0 }}
+        />
+        <BoardGame generatorMode />
       </TreeStateProvider>
     ))
     .with("analysis", () => (

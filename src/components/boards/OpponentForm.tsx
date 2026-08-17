@@ -25,7 +25,9 @@ import type { EngineSettings, LocalEngine } from "@/utils/engines";
 import {
   applyEnginePlayerPreset,
   ENGINE_PLAYER_PRESETS,
+  getEnginePresetNodeBudget,
   getEnginePresetDescription,
+  normalizeEngineGoMode,
   type EnginePlayerPresetId,
 } from "@/utils/enginePresets";
 import {
@@ -55,6 +57,7 @@ export type OpponentSettings =
       engineSettings?: EngineSettings;
       presetId?: EnginePlayerPresetId;
       targetElo?: number;
+      seed?: number;
       timeUnit?: TimeType;
       incrementUnit?: TimeType;
     }
@@ -64,6 +67,7 @@ export type OpponentSettings =
       engine: LocalEngine | null;
       profileId: HumanBotProfileId;
       humanTiming?: boolean;
+      seed?: number;
       timeUnit?: TimeType;
       incrementUnit?: TimeType;
     };
@@ -80,11 +84,15 @@ export function OpponentForm({
   opponent,
   setOpponent,
   setOtherOpponent,
+  allowedTypes = ["human", "engine", "humanBot"],
+  showSeed = false,
 }: {
   sameTimeControl: boolean;
   opponent: OpponentSettings;
   setOpponent: React.Dispatch<React.SetStateAction<OpponentSettings>>;
   setOtherOpponent: React.Dispatch<React.SetStateAction<OpponentSettings>>;
+  allowedTypes?: OpponentType[];
+  showSeed?: boolean;
 }) {
   const { t } = useTranslation();
   const humanBotProfile = getHumanBotProfile(
@@ -196,7 +204,7 @@ export function OpponentForm({
               </Center>
             ),
           },
-        ]}
+        ].filter((option) => allowedTypes.includes(option.value as OpponentType))}
         fullWidth
         size="xs"
         value={opponent.type}
@@ -223,6 +231,7 @@ export function OpponentForm({
                   prev.go,
                   presetId,
                   prev.targetElo ?? 1800,
+                  engine?.name,
                 );
                 return {
                   ...prev,
@@ -251,6 +260,7 @@ export function OpponentForm({
                   prev.go,
                   presetId,
                   prev.targetElo ?? 1800,
+                  prev.engine?.name,
                 );
                 return {
                   ...prev,
@@ -282,6 +292,7 @@ export function OpponentForm({
                     prev.go,
                     "limited",
                     targetElo,
+                    prev.engine?.name,
                   );
                   return {
                     ...prev,
@@ -299,6 +310,17 @@ export function OpponentForm({
               getEnginePresetDescription(opponent.presetId ?? "custom"),
             )}
           </Text>
+          {getEnginePresetNodeBudget(opponent.presetId ?? "custom", opponent.engine?.name) && (
+            <Text size="xs" c="blue">
+              {t("EnginePresets.MctsBudget", {
+                defaultValue: "Lc0/MCTS budget: {{nodes}} nodes per move.",
+                nodes: getEnginePresetNodeBudget(
+                  opponent.presetId ?? "custom",
+                  opponent.engine?.name,
+                )?.toLocaleString(),
+              })}
+            </Text>
+          )}
         </Stack>
       )}
 
@@ -393,6 +415,31 @@ export function OpponentForm({
             }
           />
         </Stack>
+      )}
+
+      {showSeed && opponent.type !== "human" && (
+        <NumberInput
+          label={t("ModelGame.Seed", "Launch seed")}
+          description={t(
+            "ModelGame.Seed.Desc",
+            "Used when an engine argument contains {{randomSeed}}; it is still recorded for every player.",
+          )}
+          min={0}
+          max={4_294_967_295}
+          step={1}
+          value={opponent.seed ?? 1}
+          onChange={(value) => {
+            if (typeof value !== "number" || !Number.isFinite(value)) return;
+            setOpponent((prev) =>
+              prev.type === "human"
+                ? prev
+                : {
+                    ...prev,
+                    seed: Math.max(0, Math.min(4_294_967_295, Math.trunc(value))),
+                  },
+            );
+          }}
+        />
       )}
 
       <Divider variant="dashed" label={t("Board.Opponent.TimeSettings")} />
@@ -497,7 +544,7 @@ export function OpponentForm({
                   }
                   return {
                     ...prev,
-                    go,
+                    go: normalizeEngineGoMode(go, prev.engine?.name),
                     presetId: "custom",
                   };
                 })
@@ -529,7 +576,7 @@ export function OpponentForm({
                   });
                   return {
                     ...prev,
-                    go: newSettings.go,
+                    go: normalizeEngineGoMode(newSettings.go, prev.engine?.name),
                     engineSettings: newSettings.settings,
                     presetId: "custom",
                   };

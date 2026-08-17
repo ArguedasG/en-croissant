@@ -1,4 +1,11 @@
-use std::{fmt::Display, path::PathBuf, process::Stdio, time::Duration};
+use std::{
+    collections::HashSet,
+    fmt::Display,
+    path::PathBuf,
+    process::Stdio,
+    sync::{Arc, Mutex as StdMutex},
+    time::Duration,
+};
 
 use log::error;
 use serde::Serialize;
@@ -11,7 +18,7 @@ use vampirc_uci::UciMessage;
 
 use crate::error::Error;
 
-use super::{normalize_uci_moves_for_fen, types::GoMode};
+use super::{normalize_uci_moves_for_fen, types::GoMode, EngineOption};
 
 #[cfg(target_os = "windows")]
 pub const CREATE_NO_WINDOW: u32 = 0x08000000;
@@ -21,9 +28,9 @@ const UCI_HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(30);
 const UCI_READY_TIMEOUT: Duration = Duration::from_secs(600);
 const UCI_BEST_MOVE_TIMEOUT: Duration = Duration::from_secs(600);
 
-fn resolve_launch_args(args: &[String]) -> (Vec<String>, Option<u32>) {
+fn resolve_launch_args(args: &[String], requested_seed: Option<u32>) -> (Vec<String>, Option<u32>) {
     let uses_random_seed = args.iter().any(|arg| arg.contains(RANDOM_SEED_PLACEHOLDER));
-    let random_seed = rand::random::<u32>();
+    let random_seed = requested_seed.unwrap_or_else(rand::random::<u32>);
     let random_seed_text = random_seed.to_string();
     let resolved_args = args
         .iter()
@@ -48,20 +55,44 @@ pub struct EngineLaunchMetadata {
     pub path: String,
     pub resolved_args: Vec<String>,
     pub random_seed: Option<u32>,
+    pub applied_options: Vec<EngineOption>,
+    pub skipped_unsupported_options: Vec<String>,
+}
+
+#[derive(Clone)]
+pub struct EngineKillHandle {
+    child: Arc<StdMutex<Child>>,
+}
+
+impl EngineKillHandle {
+    pub fn kill_sync(&self) {
+        if let Ok(mut child) = self.child.lock() {
+            let _ = child.start_kill();
+        }
+    }
 }
 
 pub struct BaseEngine {
     pub stdin: ChildStdin,
     pub reader: Option<EngineReader>,
     #[allow(dead_code)]
-    child: Child,
+    kill_handle: EngineKillHandle,
     logs: Vec<EngineLog>,
     launch_metadata: EngineLaunchMetadata,
+    supported_options: HashSet<String>,
 }
 
 impl BaseEngine {
     pub async fn spawn(path: PathBuf, args: &[String]) -> Result<Self, Error> {
-        let (resolved_args, random_seed) = resolve_launch_args(args);
+        Self::spawn_with_seed(path, args, None).await
+    }
+
+    pub async fn spawn_with_seed(
+        path: PathBuf,
+        args: &[String],
+        requested_seed: Option<u32>,
+    ) -> Result<Self, Error> {
+        let (resolved_args, random_seed) = resolve_launch_args(args, requested_seed);
         let mut command = Command::new(&path);
         command.current_dir(path.parent().unwrap_or(&path));
         command.args(&resolved_args);
@@ -88,10 +119,14 @@ impl BaseEngine {
             });
         }
 
+        let kill_handle = EngineKillHandle {
+            child: Arc::new(StdMutex::new(child)),
+        };
+
         Ok(Self {
             stdin,
             reader: Some(reader),
-            child,
+            kill_handle,
             logs: vec![EngineLog::Gui(match random_seed {
                 Some(seed) => format!(
                     "launch: {} ({} arguments, randomSeed={})\n",
@@ -109,7 +144,10 @@ impl BaseEngine {
                 path: path.display().to_string(),
                 resolved_args,
                 random_seed,
+                applied_options: Vec::new(),
+                skipped_unsupported_options: Vec::new(),
             },
+            supported_options: HashSet::new(),
         })
     }
 
@@ -127,6 +165,10 @@ impl BaseEngine {
 
     pub fn launch_metadata(&self) -> EngineLaunchMetadata {
         self.launch_metadata.clone()
+    }
+
+    pub fn kill_handle(&self) -> EngineKillHandle {
+        self.kill_handle.clone()
     }
 
     fn log_gui(&mut self, cmd: &str) {
@@ -179,6 +221,13 @@ impl BaseEngine {
                 return Err(Error::EngineDisconnected);
             };
             self.logs.push(EngineLog::Engine(line.clone()));
+            if let Some(option) = line
+                .strip_prefix("option name ")
+                .and_then(|value| value.split_once(" type "))
+                .map(|(name, _)| name.trim().to_lowercase())
+            {
+                self.supported_options.insert(option);
+            }
             if line.starts_with(expected) {
                 return Ok(());
             }
@@ -189,8 +238,29 @@ impl BaseEngine {
     where
         T: Display,
     {
+        let value = value.to_string();
+        self.launch_metadata.applied_options.push(EngineOption {
+            name: name.to_string(),
+            value: value.clone(),
+        });
         let cmd = format!("setoption name {} value {}", name, value);
         self.send(&cmd).await
+    }
+
+    pub async fn set_option_if_supported<T>(&mut self, name: &str, value: T) -> Result<bool, Error>
+    where
+        T: Display,
+    {
+        if !self.supported_options.contains(&name.to_lowercase()) {
+            self.launch_metadata
+                .skipped_unsupported_options
+                .push(name.to_string());
+            self.log_gui_message(&format!("skipped unsupported option: {name}"));
+            return Ok(false);
+        }
+
+        self.set_option(name, value).await?;
+        Ok(true)
     }
 
     pub async fn set_position(&mut self, fen: &str, moves: &[String]) -> Result<(), Error> {
@@ -232,13 +302,13 @@ impl BaseEngine {
     }
 
     pub fn kill_sync(&mut self) {
-        let _ = self.child.start_kill();
+        self.kill_handle.kill_sync();
     }
 }
 
 impl Drop for BaseEngine {
     fn drop(&mut self) {
-        let _ = self.child.start_kill();
+        self.kill_handle.kill_sync();
     }
 }
 
@@ -247,12 +317,16 @@ mod tests {
     use std::{
         env,
         io::{self, BufRead, Write},
+        time::Duration,
     };
 
     use shakmaty::{uci::UciMove, Position, Role};
+    use tokio::sync::Mutex;
 
     use super::{resolve_launch_args, BaseEngine, EngineLog, RANDOM_SEED_PLACEHOLDER};
-    use crate::engine::{parse_fen_to_position, GoMode};
+    use crate::engine::{parse_fen_to_position, EngineOption, GoMode};
+
+    static MOCK_ENGINE_LOCK: Mutex<()> = Mutex::const_new(());
 
     const TACTICAL_CASES: [(&str, &str, &[&str]); 3] = [
         (
@@ -281,7 +355,7 @@ mod tests {
             "--device=cpu".to_string(),
         ];
 
-        let (resolved, random_seed) = resolve_launch_args(&args);
+        let (resolved, random_seed) = resolve_launch_args(&args, Some(12345));
 
         assert_eq!(resolved[0], "--use-uci-history");
         assert_eq!(resolved[1], "--seed");
@@ -289,6 +363,7 @@ mod tests {
         assert!(resolved[2].parse::<u32>().is_ok());
         assert_eq!(resolved[3], "--device=cpu");
         assert_eq!(resolved[2], random_seed.unwrap().to_string());
+        assert_eq!(random_seed, Some(12345));
     }
 
     #[test]
@@ -330,11 +405,23 @@ mod tests {
                         "option name MultiPV type spin default 1 min 1 max 4"
                     )
                     .unwrap();
+                    writeln!(
+                        stdout,
+                        "option name Threads type spin default 1 min 1 max 8"
+                    )
+                    .unwrap();
+                    writeln!(
+                        stdout,
+                        "option name Hash type spin default 16 min 1 max 1024"
+                    )
+                    .unwrap();
+                    writeln!(stdout, "option name UCI_Chess960 type check default false").unwrap();
                     writeln!(stdout, "uciok").unwrap();
                 }
                 "isready" => {
                     writeln!(stdout, "readyok").unwrap();
                 }
+                "go infinite" => {}
                 command if command.starts_with("go ") => {
                     writeln!(stdout, "info depth 1 score cp 0 nodes 1 nps 1 pv e7e5").unwrap();
                     writeln!(stdout, "bestmove e7e5").unwrap();
@@ -348,6 +435,7 @@ mod tests {
 
     #[tokio::test]
     async fn game_protocol_initializes_resets_and_searches_in_order() {
+        let _guard = MOCK_ENGINE_LOCK.lock().await;
         let path = env::current_exe().expect("test executable path must be available");
         let args = vec![
             "--ignored".to_string(),
@@ -403,6 +491,71 @@ mod tests {
         );
 
         engine.quit().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn skips_options_not_advertised_by_the_engine() {
+        let _guard = MOCK_ENGINE_LOCK.lock().await;
+        let path = env::current_exe().expect("test executable path must be available");
+        let args = vec![
+            "--ignored".to_string(),
+            "--exact".to_string(),
+            "engine::process::tests::mock_uci_engine".to_string(),
+            "--nocapture".to_string(),
+        ];
+        env::set_var("CHESS_LAB_MOCK_UCI", "1");
+        let mut engine = BaseEngine::spawn(path, &args).await.unwrap();
+        env::remove_var("CHESS_LAB_MOCK_UCI");
+
+        engine.init_uci().await.unwrap();
+        assert!(!engine
+            .set_option_if_supported("Skill Level", 20)
+            .await
+            .unwrap());
+        assert!(engine.set_option_if_supported("Threads", 1).await.unwrap());
+
+        let metadata = engine.launch_metadata();
+        assert_eq!(metadata.skipped_unsupported_options, ["Skill Level"]);
+        assert_eq!(
+            metadata.applied_options,
+            [EngineOption {
+                name: "Threads".to_string(),
+                value: "1".to_string(),
+            }]
+        );
+        engine.quit().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn kill_handle_terminates_an_engine_while_its_reader_is_locked() {
+        let _guard = MOCK_ENGINE_LOCK.lock().await;
+        let path = env::current_exe().expect("test executable path must be available");
+        let args = vec![
+            "--ignored".to_string(),
+            "--exact".to_string(),
+            "engine::process::tests::mock_uci_engine".to_string(),
+            "--nocapture".to_string(),
+        ];
+        env::set_var("CHESS_LAB_MOCK_UCI", "1");
+        let mut engine = BaseEngine::spawn(path, &args).await.unwrap();
+        env::remove_var("CHESS_LAB_MOCK_UCI");
+
+        engine.init_uci().await.unwrap();
+        engine.go(&GoMode::Infinite).await.unwrap();
+        let kill_handle = engine.kill_handle();
+        let engine = std::sync::Arc::new(Mutex::new(engine));
+        let waiting_engine = engine.clone();
+        let wait_task =
+            tokio::spawn(async move { waiting_engine.lock().await.wait_for_bestmove().await });
+
+        tokio::time::sleep(Duration::from_millis(25)).await;
+        kill_handle.kill_sync();
+
+        let result = tokio::time::timeout(Duration::from_secs(2), wait_task)
+            .await
+            .expect("killing the process must release the blocked UCI reader")
+            .expect("the reader task must not panic");
+        assert!(result.is_err());
     }
 
     #[tokio::test]

@@ -6,6 +6,7 @@ import {
   IconEdit,
   IconEditOff,
   IconEraser,
+  IconFlask,
   IconSwitchVertical,
   IconTarget,
   IconZoomCheck,
@@ -36,6 +37,7 @@ interface BoardControlsProps {
   onTakeBack?: () => void;
   disableVariations?: boolean;
   allowEditing?: boolean;
+  onGenerateModelGame?: () => void;
 }
 
 function BoardControls({
@@ -47,6 +49,7 @@ function BoardControls({
   onTakeBack,
   disableVariations,
   allowEditing,
+  onGenerateModelGame,
 }: BoardControlsProps) {
   const { t } = useTranslation();
   const { documentDir } = useLoaderData({ from: "/" });
@@ -136,6 +139,16 @@ function BoardControls({
           )}
         </ActionIcon>
       </Tooltip>
+      {onGenerateModelGame && (
+        <Tooltip
+          position="right"
+          label={t("ModelGame.FromPosition", "Generate model game from this position")}
+        >
+          <ActionIcon onClick={onGenerateModelGame}>
+            <IconFlask size="1.2rem" />
+          </ActionIcon>
+        </Tooltip>
+      )}
       {!eraseDrawablesOnClick && (
         <Tooltip position="right" label={t("Board.Action.ClearDrawings")}>
           <ActionIcon onClick={() => clearShapes()}>

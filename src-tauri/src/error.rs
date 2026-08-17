@@ -72,6 +72,24 @@ pub enum Error {
     #[error("Game not found: {0}")]
     GameNotFound(String),
 
+    #[error("Model game batch not found: {0}")]
+    ModelGameBatchNotFound(String),
+
+    #[error("Invalid model game batch: {0}")]
+    InvalidModelGameBatch(String),
+
+    #[error("Model game experiment not found: {0}")]
+    ModelGameExperimentNotFound(String),
+
+    #[error("Model game experiment game not found: {experiment_id}, game {index}")]
+    ModelGameExperimentGameNotFound { experiment_id: String, index: u32 },
+
+    #[error("Invalid model game experiment: {0}")]
+    InvalidModelGameExperiment(String),
+
+    #[error(transparent)]
+    Json(Box<serde_json::Error>),
+
     #[error("Game not in progress")]
     GameNotInProgress,
 
@@ -130,6 +148,12 @@ impl From<tauri_plugin_opener::Error> for Error {
 impl From<reqwest::Error> for Error {
     fn from(value: reqwest::Error) -> Self {
         Self::Reqwest(Box::new(value))
+    }
+}
+
+impl From<serde_json::Error> for Error {
+    fn from(value: serde_json::Error) -> Self {
+        Self::Json(Box::new(value))
     }
 }
 

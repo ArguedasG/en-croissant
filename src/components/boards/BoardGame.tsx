@@ -5,6 +5,7 @@ import {
   Checkbox,
   Divider,
   Group,
+  Loader,
   NumberInput,
   Paper,
   Portal,
@@ -12,13 +13,18 @@ import {
   SegmentedControl,
   Stack,
   Text,
+  Tooltip,
 } from "@mantine/core";
 import { useToggle } from "@mantine/hooks";
+import { notifications } from "@mantine/notifications";
 import {
   IconArrowsExchange,
+  IconEdit,
   IconFileExport,
   IconFileText,
   IconPlus,
+  IconRefresh,
+  IconSettings,
   IconX,
   IconZoomCheck,
 } from "@tabler/icons-react";
@@ -32,7 +38,7 @@ import { useCallback, useContext, useEffect, useMemo, useRef, useState } from "r
 import { useTranslation } from "react-i18next";
 import { match } from "ts-pattern";
 import { useStore } from "zustand";
-import type { GameMove, Outcome } from "@/bindings";
+import type { GameMove, ModelGameBatchState, Outcome } from "@/bindings";
 import {
   commands,
   type EngineLog,
@@ -47,6 +53,7 @@ import {
   flipBoardAfterMoveAtom,
   currentGameIdAtom,
   currentGameStateAtom,
+  currentModelGameBatchIdAtom,
   currentPlayersAtom,
   gameInputColorAtom,
   gameOpeningBookEnabledAtom,
@@ -57,6 +64,9 @@ import {
   gameSameTimeControlAtom,
   humanBotHistoryAtom,
   humanBotMeasurementsAtom,
+  modelGameBlackSettingsAtom,
+  modelGameBatchSettingsAtom,
+  modelGameWhiteSettingsAtom,
   tabsAtom,
 } from "@/state/atoms";
 import { positionFromFen } from "@/utils/chessops";
@@ -77,7 +87,10 @@ import {
   buildHumanBotMeasurementHeaders,
   type HumanBotMeasurementPlayer,
 } from "@/utils/humanBotMeasurements";
-import type { GameHeaders } from "@/utils/treeReducer";
+import { getModelGameArtifactPaths, serializeModelGameArtifacts } from "@/utils/modelGame";
+import { normalizeEngineGoMode } from "@/utils/enginePresets";
+import { createTab } from "@/utils/tabs";
+import type { GameHeaders, TreeState } from "@/utils/treeReducer";
 import { unwrap } from "@/utils/unwrap";
 import EngineLogsView from "../common/EngineLogsView";
 import FileInput from "../common/FileInput";
@@ -90,6 +103,8 @@ import BoardControls from "./BoardControls";
 import EditingCard from "./EditingCard";
 import HumanBotHistoryPanel from "./HumanBotHistoryPanel";
 import HumanBotMeasurementsPanel from "./HumanBotMeasurementsPanel";
+import { ModelGameBatchProgress, ModelGameBatchSetup } from "./ModelGameBatchPanel";
+import ModelGameExperimentHistory from "./ModelGameExperimentHistory";
 import { OpponentForm, type OpponentSettings } from "./OpponentForm";
 
 function gameResultToOutcome(result: GameResult): Outcome {
@@ -99,6 +114,23 @@ function gameResultToOutcome(result: GameResult): Outcome {
 }
 
 type BackendMove = { uci: string; clock: number | null };
+type GamePlayers = { white: OpponentSettings; black: OpponentSettings };
+
+type ModelGameRun = {
+  config: GameConfig;
+  players: GamePlayers;
+  source: TreeState;
+};
+
+function snapshotTreeState(state: TreeState): TreeState {
+  return structuredClone({
+    root: state.root,
+    headers: state.headers,
+    position: state.position,
+    dirty: state.dirty,
+    report: state.report,
+  });
+}
 
 function isEngineControlled(settings: OpponentSettings): boolean {
   return settings.type === "engine" || settings.type === "humanBot";
@@ -148,12 +180,16 @@ function mapBackendMoves(moves: { uci: string; clock: bigint | null }[]): Backen
   }));
 }
 
-function BoardGame() {
+function BoardGame({ generatorMode = false }: { generatorMode?: boolean }) {
   const { t } = useTranslation();
   const activeTab = useAtomValue(activeTabAtom);
+  const setActiveTab = useSetAtom(activeTabAtom);
 
   const [editingMode, toggleEditingMode] = useToggle();
   const [selectedPiece, setSelectedPiece] = useState<Piece | null>(null);
+  const [isStarting, setIsStarting] = useState(false);
+  const [isAborting, setIsAborting] = useState(false);
+  const [batchActionBusy, setBatchActionBusy] = useState(false);
 
   const [inputColor, setInputColor] = useAtom(gameInputColorAtom);
   function cycleColor() {
@@ -166,10 +202,28 @@ function BoardGame() {
     );
   }
 
-  const [player1Settings, setPlayer1Settings] = useAtom(gamePlayer1SettingsAtom);
-  const [player2Settings, setPlayer2Settings] = useAtom(gamePlayer2SettingsAtom);
+  const [player1Settings, setPlayer1Settings] = useAtom(
+    generatorMode ? modelGameWhiteSettingsAtom : gamePlayer1SettingsAtom,
+  );
+  const [player2Settings, setPlayer2Settings] = useAtom(
+    generatorMode ? modelGameBlackSettingsAtom : gamePlayer2SettingsAtom,
+  );
+  const [batchSettings, setBatchSettings] = useAtom(modelGameBatchSettingsAtom);
+  const [batchId, setBatchId] = useAtom(currentModelGameBatchIdAtom);
+  const [batchState, setBatchState] = useState<ModelGameBatchState | null>(null);
+
+  function swapModelGameColors() {
+    if (!generatorMode) return;
+    const whiteSettings = structuredClone(player1Settings);
+    const blackSettings = structuredClone(player2Settings);
+    setPlayer1Settings(blackSettings);
+    setPlayer2Settings(whiteSettings);
+  }
 
   function getPlayers() {
+    if (generatorMode) {
+      return { white: player1Settings, black: player2Settings };
+    }
     let isPlayer1White = inputColor === "white";
 
     if (inputColor === "random") {
@@ -190,6 +244,7 @@ function BoardGame() {
   const setResult = useStore(store, (s) => s.setResult);
   const appendMove = useStore(store, (s) => s.appendMove);
   const resetTree = useStore(store, (s) => s.reset);
+  const setTreeState = useStore(store, (s) => s.setState);
 
   const [, setTabs] = useAtom(tabsAtom);
   const autoFlipBoard = useAtomValue(flipBoardAfterMoveAtom);
@@ -205,6 +260,9 @@ function BoardGame() {
   const setHistory = useSetAtom(humanBotHistoryAtom);
   const setMeasurements = useSetAtom(humanBotMeasurementsAtom);
   const historySavedRef = useRef(false);
+  const modelGameRunRef = useRef<ModelGameRun | null>(null);
+  const singleExperimentIdRef = useRef<string | null>(null);
+  const singleExperimentFinalizedRef = useRef(false);
 
   const [logsOpened, toggleLogsOpened] = useToggle();
   const [logsColor, setLogsColor] = useState<"white" | "black">("white");
@@ -212,6 +270,43 @@ function BoardGame() {
   const [openingBookPath, setOpeningBookPath] = useAtom(gameOpeningBookPathAtom);
   const [openingBookEnabled, setOpeningBookEnabled] = useAtom(gameOpeningBookEnabledAtom);
   const [openingBookMaxPly, setOpeningBookMaxPly] = useAtom(gameOpeningBookMaxPlyAtom);
+
+  useEffect(() => {
+    if (!generatorMode || !batchId) {
+      setBatchState(null);
+      return;
+    }
+
+    let disposed = false;
+    commands
+      .getModelGameBatch(batchId)
+      .then((result) => {
+        if (disposed) return;
+        if (result.status === "ok") {
+          setBatchState(result.data);
+        } else {
+          setBatchId(null);
+          setBatchState(null);
+        }
+      })
+      .catch(() => {
+        if (!disposed) {
+          setBatchId(null);
+          setBatchState(null);
+        }
+      });
+
+    const unlisten = events.modelGameBatchEvent.listen(({ payload }) => {
+      if (payload.state.batchId === batchId) {
+        setBatchState(payload.state);
+      }
+    });
+
+    return () => {
+      disposed = true;
+      unlisten.then((stop) => stop());
+    };
+  }, [batchId, generatorMode, setBatchId]);
 
   const whiteIsEngineControlled = isEngineControlled(players.white);
   const blackIsEngineControlled = isEngineControlled(players.black);
@@ -356,6 +451,7 @@ function BoardGame() {
         version: settings.engine?.version ?? "",
         presetCategory: "humanLike",
         targetElo: profile.elo,
+        seed: settings.seed ?? null,
         args: buildHumanBotEngineArgs(settings.engine?.args ?? []),
         options: engineSettings.map((setting) => ({
           name: setting.name,
@@ -374,12 +470,15 @@ function BoardGame() {
       version: settings.engine?.version ?? "",
       presetCategory: settings.presetId ?? "custom",
       targetElo: settings.presetId === "limited" ? (settings.targetElo ?? 1800) : null,
+      seed: settings.seed ?? null,
       args: settings.engine?.args ?? [],
       options: (settings.engineSettings ?? settings.engine?.settings ?? []).map((s) => ({
         name: s.name,
         value: s.name === "MultiPV" ? "1" : (s.value?.toString() ?? ""),
       })),
-      go: settings.timeControl ? null : settings.go,
+      go: settings.timeControl
+        ? null
+        : normalizeEngineGoMode(settings.go, settings.engine?.name),
     };
   }
 
@@ -396,18 +495,9 @@ function BoardGame() {
   }
 
   async function startGame() {
+    if (isStarting) return;
+    toggleEditingMode(false);
     const playerSettings = getPlayers();
-    setPlayers(playerSettings);
-    historySavedRef.current = false;
-
-    const boardOrientation =
-      playerSettings.black.type === "human" && isEngineControlled(playerSettings.white)
-        ? "black"
-        : "white";
-
-    const newGameId = `${activeTab}-game`;
-    setGameId(newGameId);
-
     const initialMoves = getTreeMoves();
 
     const config: GameConfig = {
@@ -433,9 +523,89 @@ function BoardGame() {
           : null,
     } as GameConfig;
 
+    if (generatorMode) {
+      modelGameRunRef.current = {
+        config: structuredClone(config),
+        players: structuredClone(playerSettings),
+        source: snapshotTreeState(store.getState()),
+      };
+    }
+
+    if (generatorMode && batchSettings.enabled) {
+      await launchModelGameBatch(config);
+    } else {
+      await launchConfiguredGame(config, playerSettings);
+    }
+  }
+
+  async function launchModelGameBatch(config: GameConfig) {
+    if (!activeTab) return;
+    setIsStarting(true);
+    const newBatchId = `${activeTab}-batch-${Date.now()}`;
+    try {
+      const state = unwrap(
+        await commands.startModelGameBatch(newBatchId, {
+          ownerId: activeTab,
+          gameConfig: config,
+          gameCount: batchSettings.gameCount,
+          alternateColors: batchSettings.alternateColors,
+          seedStep: batchSettings.seedStep,
+          requestedConcurrency: batchSettings.concurrency,
+          maxCpuThreads: batchSettings.maxCpuThreads,
+          maxMemoryMb: batchSettings.maxMemoryMb,
+          maxRetries: batchSettings.maxRetries,
+        }),
+      );
+      setBatchId(newBatchId);
+      setBatchState(state);
+    } catch (err) {
+      notifications.show({
+        title: t("ModelGame.Batch.Start.Error", "Could not start the batch"),
+        message: err instanceof Error ? err.message : String(err),
+        color: "red",
+      });
+    } finally {
+      setIsStarting(false);
+    }
+  }
+
+  async function launchConfiguredGame(config: GameConfig, playerSettings: GamePlayers) {
+    setIsStarting(true);
+    setPlayers(playerSettings);
+    historySavedRef.current = false;
+
+    const boardOrientation =
+      playerSettings.black.type === "human" && isEngineControlled(playerSettings.white)
+        ? "black"
+        : "white";
+
+    const newGameId = `${activeTab}-game`;
+    setGameId(newGameId);
+
     try {
       const result = await commands.startGame(newGameId, config);
       const state = unwrap(result);
+
+      if (generatorMode && activeTab) {
+        const experimentId = `${activeTab}-single-${Date.now()}`;
+        const experimentResult = await commands.startSingleModelGameExperiment(
+          experimentId,
+          activeTab,
+          newGameId,
+          config,
+        );
+        if (experimentResult.status === "ok") {
+          singleExperimentIdRef.current = experimentId;
+          singleExperimentFinalizedRef.current = false;
+        } else {
+          singleExperimentIdRef.current = null;
+          notifications.show({
+            title: t("ModelGame.Experiments.RecordError", "Could not record the experiment"),
+            message: experimentResult.error,
+            color: "red",
+          });
+        }
+      }
 
       setWhiteTime(state.whiteTime !== null ? Number(state.whiteTime) : null);
       setBlackTime(state.blackTime !== null ? Number(state.blackTime) : null);
@@ -462,7 +632,9 @@ function BoardGame() {
       const hasHumanBot =
         playerSettings.white.type === "humanBot" || playerSettings.black.type === "humanBot";
       let eventStr = "Casual Game";
-      if (whiteIsEngine && blackIsEngine) {
+      if (generatorMode) {
+        eventStr = "Model Game";
+      } else if (whiteIsEngine && blackIsEngine) {
         eventStr = hasHumanBot ? "Human Bot Match" : "Engine Match";
       } else if (whiteIsEngine || blackIsEngine) {
         eventStr = hasHumanBot ? "Player vs Human Bot" : "Player vs Engine";
@@ -530,6 +702,13 @@ function BoardGame() {
         orientation: boardOrientation,
         other: {
           ...retainedOtherHeaders,
+          ...(generatorMode ? { ModelGameSchemaVersion: "1" } : {}),
+          ...(generatorMode && playerSettings.white.type !== "human"
+            ? { ModelGameWhiteSeed: String(playerSettings.white.seed ?? 1) }
+            : {}),
+          ...(generatorMode && playerSettings.black.type !== "human"
+            ? { ModelGameBlackSeed: String(playerSettings.black.seed ?? 2) }
+            : {}),
           ...(hasHumanBot ? { HumanBotConfigVersion: "3" } : {}),
           ...humanBotHeaders,
         },
@@ -559,6 +738,21 @@ function BoardGame() {
       );
     } catch (err) {
       console.error("Failed to start game:", err);
+      setGameId(null);
+      setGameState("settingUp");
+      notifications.show({
+        title: t("ModelGame.Start.Error", "Could not start the game"),
+        message:
+          err instanceof Error
+            ? err.message
+            : t(
+                "ModelGame.Start.Error.Desc",
+                "Check the engine configuration and its logs, then try again.",
+              ),
+        color: "red",
+      });
+    } finally {
+      setIsStarting(false);
     }
   }
 
@@ -761,11 +955,30 @@ function BoardGame() {
             if (typeof state.status === "object" && "finished" in state.status) {
               setResult(gameResultToOutcome(state.status.finished.result));
             }
+            const experimentId = singleExperimentIdRef.current;
+            if (generatorMode && experimentId && !singleExperimentFinalizedRef.current) {
+              singleExperimentFinalizedRef.current = true;
+              commands
+                .finalizeSingleModelGameExperiment(experimentId, gameId, false)
+                .then((result) => {
+                  if (result.status === "error") {
+                    singleExperimentFinalizedRef.current = false;
+                    notifications.show({
+                      title: t(
+                        "ModelGame.Experiments.RecordError",
+                        "Could not record the experiment",
+                      ),
+                      message: result.error,
+                      color: "red",
+                    });
+                  }
+                });
+            }
           }
         }
       });
     }
-  }, [gameId, gameState, setGameState, setResult]);
+  }, [gameId, gameState, generatorMode, setGameState, setResult, t]);
 
   const movable = useMemo(() => {
     if (players.white.type === "human" && players.black.type === "human") {
@@ -784,7 +997,11 @@ function BoardGame() {
 
   const onePlayerIsEngine = isPlayerVsEngine;
   const isEngineVsEngine = whiteIsEngineControlled && blackIsEngineControlled;
-  const setupIsValid = hasConfiguredPlayer(player1Settings) && hasConfiguredPlayer(player2Settings);
+  const setupIsValid =
+    hasConfiguredPlayer(player1Settings) &&
+    hasConfiguredPlayer(player2Settings) &&
+    (!generatorMode ||
+      (isEngineControlled(player1Settings) && isEngineControlled(player2Settings)));
 
   function getResignationLosingColor(): "white" | "black" {
     if (isPlayerVsEngine) {
@@ -795,9 +1012,102 @@ function BoardGame() {
 
   async function handleAbort() {
     if (!gameId) return;
-    await commands.abortGame(gameId);
-    setGameState("gameOver");
-    setResult("*");
+    setIsAborting(true);
+    try {
+      const experimentId = singleExperimentIdRef.current;
+      if (generatorMode && experimentId && !singleExperimentFinalizedRef.current) {
+        singleExperimentFinalizedRef.current = true;
+        const recordResult = await commands.finalizeSingleModelGameExperiment(
+          experimentId,
+          gameId,
+          true,
+        );
+        if (recordResult.status === "error") {
+          singleExperimentFinalizedRef.current = false;
+          notifications.show({
+            title: t("ModelGame.Experiments.RecordError", "Could not record the experiment"),
+            message: recordResult.error,
+            color: "red",
+          });
+        }
+      }
+      unwrap(await commands.abortGame(gameId));
+      setGameState("gameOver");
+      setResult("*");
+    } catch (err) {
+      notifications.show({
+        title: t("ModelGame.Abort.Error", "Could not abort the game"),
+        message: err instanceof Error ? err.message : String(err),
+        color: "red",
+      });
+    } finally {
+      setIsAborting(false);
+    }
+  }
+
+  async function updateBatchState(
+    action: (
+      batchId: string,
+    ) => Promise<{ status: "ok"; data: ModelGameBatchState } | { status: "error"; error: string }>,
+  ) {
+    if (!batchId) return;
+    setBatchActionBusy(true);
+    try {
+      setBatchState(unwrap(await action(batchId)));
+    } catch (err) {
+      notifications.show({
+        title: t("ModelGame.Batch.Action.Error", "Could not update the batch"),
+        message: err instanceof Error ? err.message : String(err),
+        color: "red",
+      });
+    } finally {
+      setBatchActionBusy(false);
+    }
+  }
+
+  function handlePauseBatch() {
+    return updateBatchState(commands.pauseModelGameBatch);
+  }
+
+  function handleResumeBatch() {
+    return updateBatchState(commands.resumeModelGameBatch);
+  }
+
+  function handleCancelBatch() {
+    return updateBatchState(commands.cancelModelGameBatch);
+  }
+
+  async function handleEditBatch() {
+    if (batchId) {
+      await commands.dismissModelGameBatch(batchId);
+    }
+    setBatchId(null);
+    setBatchState(null);
+  }
+
+  async function handleAnalyzeBatchGame(index: number) {
+    if (!batchId) return;
+    try {
+      const artifact = unwrap(await commands.readModelGameExperimentGame(batchId, index));
+      const result = batchState?.results.find((candidate) => candidate.index === index);
+      await createTab({
+        tab: {
+          name: result
+            ? `${result.whitePlayer} - ${result.blackPlayer}`
+            : t("ModelGame.Experiments.Game", "Model game"),
+          type: "analysis",
+        },
+        setTabs,
+        setActiveTab,
+        pgn: artifact.pgn,
+      });
+    } catch (error) {
+      notifications.show({
+        title: t("ModelGame.Experiments.OpenGameError", "Could not open the saved game"),
+        message: error instanceof Error ? error.message : String(error),
+        color: "red",
+      });
+    }
   }
 
   async function handleResign() {
@@ -812,6 +1122,28 @@ function BoardGame() {
     setWhiteTime(null);
     setBlackTime(null);
     resetTree();
+  }
+
+  function restoreModelGameSource(run: ModelGameRun) {
+    setTreeState(snapshotTreeState(run.source));
+    setWhiteTime(null);
+    setBlackTime(null);
+    setResult("*");
+  }
+
+  async function handleRepeatModelGame() {
+    const run = modelGameRunRef.current;
+    if (!run) return;
+    restoreModelGameSource(run);
+    await launchConfiguredGame(structuredClone(run.config), structuredClone(run.players));
+  }
+
+  async function handleEditModelGame() {
+    const run = modelGameRunRef.current;
+    if (gameId) await commands.abortGame(gameId);
+    if (run) restoreModelGameSource(run);
+    setGameId(null);
+    setGameState("settingUp");
   }
 
   async function handleSelectOpeningBook() {
@@ -842,6 +1174,50 @@ function BoardGame() {
     if (!file) return;
 
     await writeTextFile(file, serializeGameManifest(result.data));
+  }
+
+  async function exportModelGameArtifacts() {
+    if (!gameId) return;
+    const manifestResult = await commands.getGameManifest(gameId);
+    if (manifestResult.status === "error") {
+      notifications.show({
+        title: t("ModelGame.Export.Error", "Could not export the model game"),
+        message: t(
+          "ModelGame.Export.Error.Desc",
+          "Aborted games are not retained yet. Complete the game before exporting it.",
+        ),
+        color: "red",
+      });
+      return;
+    }
+
+    const selectedPath = await save({
+      defaultPath: "chess-lab-model-game.pgn",
+      filters: [{ name: "PGN", extensions: ["pgn"] }],
+    });
+    if (!selectedPath) return;
+
+    const paths = getModelGameArtifactPaths(selectedPath);
+    const artifacts = serializeModelGameArtifacts(
+      getPGN(root, {
+        headers,
+        comments: true,
+        extraMarkups: true,
+        glyphs: true,
+        variations: false,
+      }),
+      manifestResult.data,
+    );
+    await writeTextFile(paths.pgnPath, artifacts.pgn);
+    await writeTextFile(paths.manifestPath, artifacts.manifest);
+    notifications.show({
+      title: t("ModelGame.Export.Success", "Model game exported"),
+      message: t(
+        "ModelGame.Export.Success.Desc",
+        "The PGN and its reproducibility manifest were saved together.",
+      ),
+      color: "green",
+    });
   }
 
   return (
@@ -887,29 +1263,109 @@ function BoardGame() {
                 </>
               }
             />
+          ) : generatorMode && batchId && !batchState ? (
+            <Stack h="100%" align="center" justify="center">
+              <Loader />
+              <Text size="sm" c="dimmed">
+                {t("ModelGame.Batch.Loading", "Loading batch state...")}
+              </Text>
+            </Stack>
+          ) : batchState ? (
+            <ModelGameBatchProgress
+              state={batchState}
+              busy={batchActionBusy}
+              onPause={handlePauseBatch}
+              onResume={handleResumeBatch}
+              onCancel={handleCancelBatch}
+              onEdit={handleEditBatch}
+              onAnalyze={handleAnalyzeBatchGame}
+            />
           ) : (
             <>
               {gameState === "settingUp" && (
                 <Stack h="100%" gap={0}>
                   <ScrollArea style={{ flex: 1 }} offsetScrollbars>
                     <Stack>
+                      {generatorMode && (
+                        <Paper withBorder p="sm">
+                          <Stack gap="xs">
+                            <Group justify="space-between" align="flex-start" wrap="nowrap">
+                              <div>
+                                <Text fw={600}>
+                                  {t("ModelGame.InitialPosition", "Initial position")}
+                                </Text>
+                                <Text size="xs" c="dimmed">
+                                  {getTreeMoves().length > 0
+                                    ? t("ModelGame.InitialPosition.History", {
+                                        defaultValue:
+                                          "Starts after {{moves}} plies from the source PGN.",
+                                        moves: getTreeMoves().length,
+                                      })
+                                    : t(
+                                        "ModelGame.InitialPosition.Fen",
+                                        "Starts directly from the FEN shown below.",
+                                      )}
+                                </Text>
+                              </div>
+                              <Button
+                                variant="light"
+                                size="xs"
+                                leftSection={<IconEdit size="1rem" />}
+                                onClick={() => toggleEditingMode(true)}
+                              >
+                                {t("ModelGame.InitialPosition.Edit", "Edit board / FEN")}
+                              </Button>
+                            </Group>
+                            <Text size="xs" ff="monospace" truncate title={root.fen}>
+                              {root.fen}
+                            </Text>
+                          </Stack>
+                        </Paper>
+                      )}
+                      {generatorMode && (
+                        <ModelGameBatchSetup
+                          settings={batchSettings}
+                          setSettings={setBatchSettings}
+                        />
+                      )}
+                      {generatorMode && <ModelGameExperimentHistory />}
                       <Group>
                         <Text flex={1} ta="center" fz="lg" fw="bold">
-                          {match(inputColor)
-                            .with("white", () => "White")
-                            .with("random", () => "Random")
-                            .with("black", () => "Black")
-                            .exhaustive()}
+                          {generatorMode
+                            ? t("Fen.White", "White")
+                            : match(inputColor)
+                                .with("white", () => "White")
+                                .with("random", () => "Random")
+                                .with("black", () => "Black")
+                                .exhaustive()}
                         </Text>
-                        <ActionIcon onClick={cycleColor}>
-                          <IconArrowsExchange />
-                        </ActionIcon>
+                        {generatorMode ? (
+                          <Tooltip label={t("ModelGame.SwapColors", "Cambiar colores")}>
+                            <ActionIcon
+                              aria-label={t("ModelGame.SwapColors", "Cambiar colores")}
+                              onClick={swapModelGameColors}
+                            >
+                              <IconArrowsExchange />
+                            </ActionIcon>
+                          </Tooltip>
+                        ) : (
+                          <Tooltip label={t("Board.Game.CycleColor", "Cambiar color")}>
+                            <ActionIcon
+                              aria-label={t("Board.Game.CycleColor", "Cambiar color")}
+                              onClick={cycleColor}
+                            >
+                              <IconArrowsExchange />
+                            </ActionIcon>
+                          </Tooltip>
+                        )}
                         <Text flex={1} ta="center" fz="lg" fw="bold">
-                          {match(inputColor)
-                            .with("white", () => "Black")
-                            .with("random", () => "Random")
-                            .with("black", () => "White")
-                            .exhaustive()}
+                          {generatorMode
+                            ? t("Fen.Black", "Black")
+                            : match(inputColor)
+                                .with("white", () => "Black")
+                                .with("random", () => "Random")
+                                .with("black", () => "White")
+                                .exhaustive()}
                         </Text>
                       </Group>
                       <Box flex={1}>
@@ -919,6 +1375,8 @@ function BoardGame() {
                             opponent={player1Settings}
                             setOpponent={setPlayer1Settings}
                             setOtherOpponent={setPlayer2Settings}
+                            allowedTypes={generatorMode ? ["engine", "humanBot"] : undefined}
+                            showSeed={generatorMode}
                           />
                           <Divider orientation="vertical" />
                           <OpponentForm
@@ -926,6 +1384,8 @@ function BoardGame() {
                             opponent={player2Settings}
                             setOpponent={setPlayer2Settings}
                             setOtherOpponent={setPlayer1Settings}
+                            allowedTypes={generatorMode ? ["engine", "humanBot"] : undefined}
+                            showSeed={generatorMode}
                           />
                         </Group>
                       </Box>
@@ -981,11 +1441,15 @@ function BoardGame() {
                             </>
                           )}
 
-                          <Divider variant="dashed" />
-                          <HumanBotHistoryPanel />
+                          {!generatorMode && (
+                            <>
+                              <Divider variant="dashed" />
+                              <HumanBotHistoryPanel />
 
-                          <Divider variant="dashed" />
-                          <HumanBotMeasurementsPanel />
+                              <Divider variant="dashed" />
+                              <HumanBotMeasurementsPanel />
+                            </>
+                          )}
                         </Stack>
                       </Paper>
                     </Stack>
@@ -996,9 +1460,14 @@ function BoardGame() {
                     onClick={startGame}
                     fullWidth
                     variant="light"
-                    disabled={error !== null || !setupIsValid}
+                    loading={isStarting}
+                    disabled={error !== null || !setupIsValid || isStarting}
                   >
-                    {t("Board.Opponent.StartGame")}
+                    {generatorMode
+                      ? batchSettings.enabled
+                        ? t("ModelGame.Batch.Generate", "Generate batch")
+                        : t("ModelGame.Generate", "Generate model game")
+                      : t("Board.Opponent.StartGame")}
                   </Button>
                 </Stack>
               )}
@@ -1006,6 +1475,17 @@ function BoardGame() {
                 <Stack h="100%">
                   <Box flex={1}>
                     <GameInfo headers={headers} />
+                    {generatorMode && gameState === "playing" && (
+                      <Group justify="center" mt="sm" gap="xs">
+                        <Loader size="xs" />
+                        <Text size="sm" c="dimmed">
+                          {t("ModelGame.WaitingForMove", {
+                            defaultValue: "Waiting for {{player}}...",
+                            player: pos?.turn === "black" ? headers.black : headers.white,
+                          })}
+                        </Text>
+                      </Group>
+                    )}
                   </Box>
                   <Group grow>
                     {gameState === "playing" && (
@@ -1014,14 +1494,33 @@ function BoardGame() {
                         color="red"
                         onClick={isEngineVsEngine ? handleAbort : handleResign}
                         leftSection={<IconX />}
+                        loading={isEngineVsEngine && isAborting}
                       >
                         {isEngineVsEngine ? "Abort" : "Resign"}
                       </Button>
                     )}
-                    {gameState === "gameOver" && (
+                    {gameState === "gameOver" && !generatorMode && (
                       <Button variant="default" onClick={handleNewGame} leftSection={<IconPlus />}>
                         New Game
                       </Button>
+                    )}
+                    {gameState === "gameOver" && generatorMode && (
+                      <>
+                        <Button
+                          variant="default"
+                          onClick={handleRepeatModelGame}
+                          leftSection={<IconRefresh />}
+                        >
+                          {t("ModelGame.Repeat", "Repeat configuration")}
+                        </Button>
+                        <Button
+                          variant="default"
+                          onClick={handleEditModelGame}
+                          leftSection={<IconSettings />}
+                        >
+                          {t("ModelGame.Edit", "Edit setup")}
+                        </Button>
+                      </>
                     )}
                     <Button
                       variant="default"
@@ -1033,13 +1532,23 @@ function BoardGame() {
 
                     {hasEngine && (
                       <>
-                        <Button
-                          variant="default"
-                          onClick={exportGameManifest}
-                          leftSection={<IconFileExport size="1rem" />}
-                        >
-                          {t("GameManifest.Export", "Export manifest")}
-                        </Button>
+                        {generatorMode && gameState === "gameOver" ? (
+                          <Button
+                            variant="default"
+                            onClick={exportModelGameArtifacts}
+                            leftSection={<IconFileExport size="1rem" />}
+                          >
+                            {t("ModelGame.Export", "Export PGN + manifest")}
+                          </Button>
+                        ) : !generatorMode ? (
+                          <Button
+                            variant="default"
+                            onClick={exportGameManifest}
+                            leftSection={<IconFileExport size="1rem" />}
+                          >
+                            {t("GameManifest.Export", "Export manifest")}
+                          </Button>
+                        ) : null}
                         <Button
                           variant="default"
                           onClick={() => toggleLogsOpened()}

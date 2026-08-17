@@ -32,6 +32,7 @@ import {
   IconChess,
   IconClock,
   IconFileImport,
+  IconFlask,
   IconPuzzle,
   IconTarget,
   IconTargetArrow,
@@ -189,6 +190,24 @@ export default function NewTabHome({ id }: { id: string }) {
       },
     },
     {
+      icon: <IconFlask size={60} />,
+      title: t("ModelGame.Title", "Model Game Generator"),
+      description: t(
+        "ModelGame.Home.Desc",
+        "Generate a reproducible engine game from any position.",
+      ),
+      label: t("ModelGame.Home.Button", "Open generator"),
+      onClick: () => {
+        setTabs((prev: Tab[]) => {
+          const tab = prev.find((t) => t.value === id);
+          if (!tab) return prev;
+          tab.name = t("ModelGame.Title", "Model Game Generator");
+          tab.type = "generator";
+          return [...prev];
+        });
+      },
+    },
+    {
       icon: <Chessboard size={60} />,
       title: t("Home.Card.AnalysisBoard.Title"),
       description: t("Home.Card.AnalysisBoard.Desc"),
@@ -248,7 +267,7 @@ export default function NewTabHome({ id }: { id: string }) {
       />
       <CreateRepertoireModal opened={openRepertoireModal} setOpened={setOpenRepertoireModal} />
       <Stack gap="lg" pt="sm">
-        <SimpleGrid cols={{ base: 1, sm: 2, lg: 5 }}>
+        <SimpleGrid cols={{ base: 1, sm: 2, lg: 3 }}>
           {cards.map((card) => (
             <Card shadow="sm" p="lg" radius="md" withBorder key={card.title}>
               <Stack align="center" h="100%" justify="space-between">

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { applyEnginePlayerPreset } from "../enginePresets";
+import { applyEnginePlayerPreset, normalizeEngineGoMode } from "../enginePresets";
 
 describe("engine player presets", () => {
     it("preserves unrelated options while applying the reference preset", () => {
@@ -43,5 +43,29 @@ describe("engine player presets", () => {
             settings,
             go: { t: "Nodes", c: 1000 },
         });
+    });
+
+    it("converts custom Lc0 depth settings to a finite node budget", () => {
+        expect(normalizeEngineGoMode({ t: "Depth", c: 18 }, "Lc0 v0.32.1")).toEqual({
+            t: "Nodes",
+            c: 2_000,
+        });
+        expect(
+            applyEnginePlayerPreset([], { t: "Depth", c: 18 }, "custom", 1800, "Leela Chess Zero")
+                .go,
+        ).toEqual({ t: "Nodes", c: 2_000 });
+    });
+
+    it("uses bounded node budgets for Lc0 instead of alpha-beta depths", () => {
+        expect(
+            applyEnginePlayerPreset([], { t: "Depth", c: 1 }, "limited", 1800, "Lc0 v0.32.1").go,
+        ).toEqual({ t: "Nodes", c: 500 });
+        expect(
+            applyEnginePlayerPreset([], { t: "Depth", c: 1 }, "strong", 1800, "Leela Chess Zero")
+                .go,
+        ).toEqual({ t: "Nodes", c: 2_000 });
+        expect(
+            applyEnginePlayerPreset([], { t: "Depth", c: 1 }, "reference", 1800, "Stockfish").go,
+        ).toEqual({ t: "Depth", c: 24 });
     });
 });

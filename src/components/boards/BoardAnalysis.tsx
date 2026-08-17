@@ -10,12 +10,13 @@ import {
 import { useLoaderData } from "@tanstack/react-router";
 import { writeTextFile } from "@tauri-apps/plugin-fs";
 import type { Piece } from "chessops";
-import { useAtom, useAtomValue } from "jotai";
+import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import { useCallback, useContext, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useStore } from "zustand";
 import {
   allEnabledAtom,
+  activeTabAtom,
   autoSaveAtom,
   currentAnalysisTabAtom,
   currentPracticeTabAtom,
@@ -24,10 +25,12 @@ import {
   currentTabSelectedAtom,
   enableAllAtom,
   practiceStateAtom,
+  tabsAtom,
 } from "@/state/atoms";
 import { keyMapAtom } from "@/state/keybinds";
 import { defaultPGN } from "@/utils/chess";
-import { getTabFile, saveToFile } from "@/utils/tabs";
+import { buildModelGameSourcePgn } from "@/utils/modelGame";
+import { createTab, getTabFile, saveToFile } from "@/utils/tabs";
 import DetachedEval from "../common/DetachedEval";
 import GameNotation from "../common/GameNotation";
 import MoveControls from "../common/MoveControls";
@@ -57,6 +60,11 @@ function BoardAnalysis() {
   const store = useContext(TreeStateContext)!;
 
   const dirty = useStore(store, (s) => s.dirty);
+  const root = useStore(store, (s) => s.root);
+  const headers = useStore(store, (s) => s.headers);
+  const position = useStore(store, (s) => s.position);
+  const [, setTabs] = useAtom(tabsAtom);
+  const setActiveTab = useSetAtom(activeTabAtom);
 
   const reset = useStore(store, (s) => s.reset);
   const clearShapes = useStore(store, (s) => s.clearShapes);
@@ -79,6 +87,19 @@ function BoardAnalysis() {
       isUserSave: true,
     });
   }, [setCurrentTab, currentTab, documentDir, store]);
+
+  const generateModelGameFromPosition = useCallback(async () => {
+    const pgn = buildModelGameSourcePgn(root, headers, position);
+    await createTab({
+      tab: {
+        name: t("ModelGame.Title", "Model Game Generator"),
+        type: "generator",
+      },
+      setTabs,
+      setActiveTab,
+      pgn,
+    });
+  }, [headers, position, root, setActiveTab, setTabs, t]);
   useEffect(() => {
     if (hasPersistentOrigin && autoSave && dirty) {
       saveFile();
@@ -268,6 +289,7 @@ function BoardAnalysis() {
                   toggleEditingMode={toggleEditingMode}
                   dirty={dirty}
                   saveFile={userSaveFile}
+                  onGenerateModelGame={generateModelGameFromPosition}
                 />
               }
             />

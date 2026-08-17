@@ -5,6 +5,7 @@ import {
   IconCopy,
   IconDatabase,
   IconEdit,
+  IconFlask,
   IconPuzzle,
   IconX,
   IconZoomCheck,
@@ -135,6 +136,9 @@ function TabIcon({ tab, tabType }: { tab: Tab; tabType: string }) {
   }
   if (tabType === "play") {
     return <IconChess size="0.875rem" />;
+  }
+  if (tabType === "generator") {
+    return <IconFlask size="0.875rem" />;
   }
   if (tab.gameOrigin.kind === "database") {
     return <IconDatabase size="0.875rem" />;

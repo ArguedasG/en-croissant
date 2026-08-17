@@ -27,8 +27,8 @@ use tokio::{
 
 use crate::{
     engine::{
-        parse_fen_to_position, BaseEngine, EngineLaunchMetadata, EngineLog, EngineOption, GoMode,
-        PlayersTime,
+        parse_fen_to_position, BaseEngine, EngineKillHandle, EngineLaunchMetadata, EngineLog,
+        EngineOption, GoMode, PlayersTime,
     },
     error::Error,
 };
@@ -56,6 +56,8 @@ pub enum PlayerConfig {
         #[serde(default, rename = "targetElo")]
         #[specta(rename = "targetElo")]
         target_elo: Option<u32>,
+        #[serde(default)]
+        seed: Option<u32>,
         #[serde(default)]
         args: Vec<String>,
         #[serde(default)]
@@ -299,6 +301,8 @@ struct GameController {
     clock: Option<ClockState>,
     white_engine: Option<Arc<Mutex<BaseEngine>>>,
     black_engine: Option<Arc<Mutex<BaseEngine>>>,
+    white_engine_kill: Option<EngineKillHandle>,
+    black_engine_kill: Option<EngineKillHandle>,
     white_engine_launch: Option<EngineLaunchMetadata>,
     black_engine_launch: Option<EngineLaunchMetadata>,
     started_at: String,
@@ -354,6 +358,8 @@ impl GameController {
             clock,
             white_engine: None,
             black_engine: None,
+            white_engine_kill: None,
+            black_engine_kill: None,
             white_engine_launch: None,
             black_engine_launch: None,
             started_at: Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true),
@@ -751,6 +757,12 @@ impl GameManager {
             if let Some(tx) = game.shutdown_tx.take() {
                 let _ = tx.send(true);
             }
+            if let Some(handle) = &game.white_engine_kill {
+                handle.kill_sync();
+            }
+            if let Some(handle) = &game.black_engine_kill {
+                handle.kill_sync();
+            }
         }
 
         let OpeningBookResult {
@@ -769,6 +781,8 @@ impl GameManager {
         );
         normalize_game_engine_options(&mut config.white, castling_mode.is_chess960());
         normalize_game_engine_options(&mut config.black, castling_mode.is_chess960());
+        normalize_lc0_go_mode(&mut config.white);
+        normalize_lc0_go_mode(&mut config.black);
 
         let mut controller = GameController::new(game_id.clone(), config.clone())?;
         controller.polyglot_book = polyglot_book;
@@ -778,25 +792,33 @@ impl GameManager {
             path,
             args,
             options,
+            seed,
             ..
         } = &config.white
         {
-            let mut engine = BaseEngine::spawn(PathBuf::from(path), args).await?;
+            let mut engine = BaseEngine::spawn_with_seed(PathBuf::from(path), args, *seed).await?;
             engine.init_uci().await?;
             for opt in options {
                 if opt.name == "UCI_Chess960" || opt.name == "MultiPV" {
                     continue;
                 }
-                engine.set_option(&opt.name, &opt.value).await?;
+                engine
+                    .set_option_if_supported(&opt.name, &opt.value)
+                    .await?;
             }
             if castling_mode.is_chess960() {
-                engine.set_option("UCI_Chess960", "true").await?;
+                engine
+                    .set_option_if_supported("UCI_Chess960", "true")
+                    .await?;
             } else {
-                engine.set_option("UCI_Chess960", "false").await?;
+                engine
+                    .set_option_if_supported("UCI_Chess960", "false")
+                    .await?;
             }
-            engine.set_option("MultiPV", "1").await?;
+            engine.set_option_if_supported("MultiPV", "1").await?;
             engine.new_game().await?;
             controller.white_engine_launch = Some(engine.launch_metadata());
+            controller.white_engine_kill = Some(engine.kill_handle());
             controller.white_engine = Some(Arc::new(Mutex::new(engine)));
         }
 
@@ -804,25 +826,33 @@ impl GameManager {
             path,
             args,
             options,
+            seed,
             ..
         } = &config.black
         {
-            let mut engine = BaseEngine::spawn(PathBuf::from(path), args).await?;
+            let mut engine = BaseEngine::spawn_with_seed(PathBuf::from(path), args, *seed).await?;
             engine.init_uci().await?;
             for opt in options {
                 if opt.name == "UCI_Chess960" || opt.name == "MultiPV" {
                     continue;
                 }
-                engine.set_option(&opt.name, &opt.value).await?;
+                engine
+                    .set_option_if_supported(&opt.name, &opt.value)
+                    .await?;
             }
             if castling_mode.is_chess960() {
-                engine.set_option("UCI_Chess960", "true").await?;
+                engine
+                    .set_option_if_supported("UCI_Chess960", "true")
+                    .await?;
             } else {
-                engine.set_option("UCI_Chess960", "false").await?;
+                engine
+                    .set_option_if_supported("UCI_Chess960", "false")
+                    .await?;
             }
-            engine.set_option("MultiPV", "1").await?;
+            engine.set_option_if_supported("MultiPV", "1").await?;
             engine.new_game().await?;
             controller.black_engine_launch = Some(engine.launch_metadata());
+            controller.black_engine_kill = Some(engine.kill_handle());
             controller.black_engine = Some(Arc::new(Mutex::new(engine)));
         }
 
@@ -1011,17 +1041,30 @@ impl GameManager {
             if let Some(tx) = controller.shutdown_tx.take() {
                 let _ = tx.send(true);
             }
-
-            if let Some(engine) = &controller.white_engine {
-                let mut proc = engine.lock().await;
-                let _ = proc.quit().await;
+            if let Some(handle) = &controller.white_engine_kill {
+                handle.kill_sync();
             }
-            if let Some(engine) = &controller.black_engine {
-                let mut proc = engine.lock().await;
-                let _ = proc.quit().await;
+            if let Some(handle) = &controller.black_engine_kill {
+                handle.kill_sync();
             }
         }
         Ok(())
+    }
+
+    pub fn kill_all_sync(&self) {
+        for entry in self.games.iter() {
+            if let Ok(controller) = entry.value().try_read() {
+                if let Some(tx) = &controller.shutdown_tx {
+                    let _ = tx.send(true);
+                }
+                if let Some(handle) = &controller.white_engine_kill {
+                    handle.kill_sync();
+                }
+                if let Some(handle) = &controller.black_engine_kill {
+                    handle.kill_sync();
+                }
+            }
+        }
     }
 
     pub async fn get_engine_logs(
@@ -1049,6 +1092,30 @@ impl GameManager {
             Ok(Vec::new())
         }
     }
+
+    pub async fn try_get_engine_logs(
+        &self,
+        game_id: &str,
+        color: &str,
+    ) -> Result<Vec<EngineLog>, Error> {
+        let game = self
+            .games
+            .get(game_id)
+            .ok_or_else(|| Error::GameNotFound(game_id.to_string()))?;
+        let controller = game.read().await;
+        let engine = match color {
+            "white" => &controller.white_engine,
+            "black" => &controller.black_engine,
+            _ => return Err(Error::InvalidColor(color.to_string())),
+        };
+        let Some(engine) = engine else {
+            return Ok(Vec::new());
+        };
+        let Ok(engine) = engine.try_lock() else {
+            return Ok(Vec::new());
+        };
+        Ok(engine.get_logs())
+    }
 }
 
 fn normalize_game_engine_options(player: &mut PlayerConfig, chess960: bool) {
@@ -1062,6 +1129,25 @@ fn normalize_game_engine_options(player: &mut PlayerConfig, chess960: bool) {
         "UCI_Chess960",
         if chess960 { "true" } else { "false" },
     );
+}
+
+fn normalize_lc0_go_mode(player: &mut PlayerConfig) {
+    let PlayerConfig::Engine {
+        name, path, args, go, ..
+    } = player
+    else {
+        return;
+    };
+
+    let is_lc0 = [name.as_str(), path.as_str()]
+        .into_iter()
+        .chain(args.iter().map(String::as_str))
+        .map(str::to_ascii_lowercase)
+        .any(|value| value.contains("lc0") || value.contains("leela"));
+
+    if is_lc0 && matches!(go, Some(GoMode::Depth(_))) {
+        *go = Some(GoMode::Nodes(2_000));
+    }
 }
 
 fn upsert_engine_option(options: &mut Vec<EngineOption>, name: &str, value: &str) {
@@ -1438,6 +1524,7 @@ async fn game_loop(
 ) {
     let mut clock_interval = interval(Duration::from_millis(100));
     let mut engine_task: Option<tokio::task::JoinHandle<Result<(), Error>>> = None;
+    let mut force_kill_engines = false;
 
     if maybe_start_engine(&controller, &engine_task).await {
         engine_task = Some(spawn_engine_task(&game_id, &controller, &app));
@@ -1450,6 +1537,7 @@ async fn game_loop(
             _ = shutdown_rx.changed() => {
                 if *shutdown_rx.borrow() {
                     info!("Game {} shutting down", game_id);
+                    force_kill_engines = true;
                     if let Some(task) = engine_task.take() {
                         task.abort();
                     }
@@ -1546,13 +1634,22 @@ async fn game_loop(
 
     {
         let ctrl = controller.read().await;
-        if let Some(engine) = &ctrl.white_engine {
-            let mut proc = engine.lock().await;
-            let _ = proc.quit().await;
-        }
-        if let Some(engine) = &ctrl.black_engine {
-            let mut proc = engine.lock().await;
-            let _ = proc.quit().await;
+        if force_kill_engines {
+            if let Some(handle) = &ctrl.white_engine_kill {
+                handle.kill_sync();
+            }
+            if let Some(handle) = &ctrl.black_engine_kill {
+                handle.kill_sync();
+            }
+        } else {
+            if let Some(engine) = &ctrl.white_engine {
+                let mut proc = engine.lock().await;
+                let _ = proc.quit().await;
+            }
+            if let Some(engine) = &ctrl.black_engine {
+                let mut proc = engine.lock().await;
+                let _ = proc.quit().await;
+            }
         }
     }
 
@@ -2071,6 +2168,7 @@ mod tests {
             "version": "3.0",
             "presetCategory": "humanLike",
             "targetElo": 900,
+            "seed": 42,
             "openingRepertoire": {
                 "id": "luna-variety",
                 "maxPly": 12,
@@ -2096,6 +2194,7 @@ mod tests {
                 version,
                 preset_category,
                 target_elo,
+                seed,
                 ..
             } => {
                 assert_eq!(repertoire.id, "luna-variety");
@@ -2108,6 +2207,7 @@ mod tests {
                 assert_eq!(version, "3.0");
                 assert_eq!(*preset_category, PlayerPresetCategory::HumanLike);
                 assert_eq!(*target_elo, Some(900));
+                assert_eq!(*seed, Some(42));
             }
             _ => panic!("openingRepertoire was silently discarded"),
         }
@@ -2131,6 +2231,7 @@ mod tests {
                 version: "18".to_string(),
                 preset_category: PlayerPresetCategory::Reference,
                 target_elo: None,
+                seed: Some(7),
                 args: Vec::new(),
                 options: vec![
                     EngineOption {
@@ -2167,10 +2268,12 @@ mod tests {
                 preset_category,
                 options,
                 go,
+                seed,
                 ..
             } => {
                 assert_eq!(version, "18");
                 assert_eq!(preset_category, PlayerPresetCategory::Reference);
+                assert_eq!(seed, Some(7));
                 assert!(options.iter().any(|option| option.name == "Threads"));
                 assert_eq!(go, Some(GoMode::Depth(24)));
             }
@@ -2186,6 +2289,7 @@ mod tests {
             version: String::new(),
             preset_category: PlayerPresetCategory::Custom,
             target_elo: None,
+            seed: None,
             args: Vec::new(),
             options: vec![
                 EngineOption {
@@ -2216,6 +2320,30 @@ mod tests {
         assert!(options
             .iter()
             .any(|option| { option.name == "UCI_Chess960" && option.value == "true" }));
+    }
+
+    #[test]
+    fn lc0_depth_is_normalized_to_a_safe_node_budget() {
+        let mut player = PlayerConfig::Engine {
+            name: "Lc0 v0.32".to_string(),
+            path: "C:/engines/lc0.exe".to_string(),
+            version: String::new(),
+            preset_category: PlayerPresetCategory::Custom,
+            target_elo: None,
+            seed: None,
+            args: Vec::new(),
+            options: Vec::new(),
+            opening_repertoire: None,
+            human_timing: None,
+            go: Some(GoMode::Depth(18)),
+        };
+
+        normalize_lc0_go_mode(&mut player);
+
+        let PlayerConfig::Engine { go, .. } = player else {
+            panic!("player must remain an engine");
+        };
+        assert_eq!(go, Some(GoMode::Nodes(2_000)));
     }
 
     #[test]
