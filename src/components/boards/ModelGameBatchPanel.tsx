@@ -17,6 +17,7 @@ import {
 } from "@mantine/core";
 import {
   IconAlertTriangle,
+  IconFlask,
   IconPlayerPause,
   IconPlayerPlay,
   IconSettings,
@@ -189,6 +190,7 @@ export function ModelGameBatchProgress({
   onResume,
   onCancel,
   onEdit,
+  onOpenExperiment,
   onAnalyze,
 }: {
   state: ModelGameBatchState;
@@ -197,6 +199,7 @@ export function ModelGameBatchProgress({
   onResume: () => void;
   onCancel: () => void;
   onEdit: () => void;
+  onOpenExperiment: () => void;
   onAnalyze: (index: number) => void;
 }) {
   const { t } = useTranslation();
@@ -287,9 +290,18 @@ export function ModelGameBatchProgress({
             </Group>
           )}
           {isTerminal && (
-            <Button variant="default" leftSection={<IconSettings size="1rem" />} onClick={onEdit}>
-              {t("ModelGame.Batch.Edit", "Edit setup / new batch")}
-            </Button>
+            <Group grow>
+              <Button
+                variant="default"
+                leftSection={<IconFlask size="1rem" />}
+                onClick={onOpenExperiment}
+              >
+                {t("ModelGame.Experiments.Open", "Open experiment")}
+              </Button>
+              <Button variant="default" leftSection={<IconSettings size="1rem" />} onClick={onEdit}>
+                {t("ModelGame.Batch.Edit", "Edit setup / new batch")}
+              </Button>
+            </Group>
           )}
           <Text size="xs" c="dimmed">
             {t(

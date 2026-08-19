@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { Chess, parseUci } from "chessops";
 import {
+    buildMaiaEngineSettings,
     buildHumanBotEngineArgs,
     buildHumanBotEngineSettings,
     buildHumanBotOpeningRepertoire,
@@ -110,6 +111,20 @@ describe("human bot profiles", () => {
             { name: "OppoElo", value: 1500 },
             { name: "Temperature", value: 1.25 },
             { name: "TopP", value: 0.98 },
+            { name: "MultiPV", value: 1 },
+        ]);
+    });
+
+    it("builds a bounded direct Maia configuration from a requested ELO", () => {
+        expect(
+            buildMaiaEngineSettings(300, [
+                { name: "Hash", value: 128 },
+                { name: "Temperature", value: 1.1 },
+                { name: "MultiPV", value: 8 },
+            ]),
+        ).toEqual([
+            { name: "Temperature", value: 1.1 },
+            { name: "Elo", value: 600 },
             { name: "MultiPV", value: 1 },
         ]);
     });

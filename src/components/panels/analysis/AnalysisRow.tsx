@@ -16,6 +16,7 @@ import { TreeStateContext } from "@/components/common/TreeStateContext";
 import { moveHighlightAtom, previewBoardOnHoverAtom, scoreTypeFamily } from "@/state/atoms";
 import { positionFromFen } from "@/utils/chessops";
 import { formatScore } from "@/utils/score";
+import MaiaWdl from "./MaiaWdl";
 import ScoreBubble from "./ScoreBubble";
 
 function AnalysisRow({
@@ -26,6 +27,7 @@ function AnalysisRow({
   threat,
   fen,
   orientation,
+  humanPrediction,
 }: {
   engine: string;
   score: Score;
@@ -34,6 +36,7 @@ function AnalysisRow({
   threat: boolean;
   fen: string;
   orientation: "white" | "black";
+  humanPrediction: boolean;
 }) {
   const [open, setOpen] = useState<boolean>(false);
   const { t } = useTranslation();
@@ -75,12 +78,16 @@ function AnalysisRow({
     <>
       <Table.Tr style={{ verticalAlign: "top" }}>
         <Table.Td width={70}>
-          <ScoreBubble
-            size="md"
-            score={score}
-            evalDisplay={evalDisplay}
-            setEvalDisplay={setEvalDisplay}
-          />
+          {humanPrediction ? (
+            <MaiaWdl wdl={score.wdl} compact />
+          ) : (
+            <ScoreBubble
+              size="md"
+              score={score}
+              evalDisplay={evalDisplay}
+              setEvalDisplay={setEvalDisplay}
+            />
+          )}
         </Table.Td>
         <Table.Td>
           <Flex

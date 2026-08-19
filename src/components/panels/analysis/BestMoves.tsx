@@ -7,6 +7,7 @@ import {
   Group,
   Progress,
   Skeleton,
+  Slider,
   Stack,
   Table,
   Text,
@@ -43,10 +44,12 @@ import {
 import { chessopsError, positionFromFen, swapMove } from "@/utils/chessops";
 import type { Engine } from "@/utils/engines";
 import { formatNodes } from "@/utils/format";
+import { isMaiaEngine } from "@/utils/humanBots";
 import { formatScore } from "@/utils/score";
 import AnalysisRow from "./AnalysisRow";
 import classes from "./BestMoves.module.css";
 import EngineSettingsForm, { type Settings } from "./EngineSettingsForm";
+import MaiaWdl from "./MaiaWdl";
 
 export const arrowColors = [
   { strong: "blue", pale: "paleBlue" },
@@ -119,6 +122,7 @@ function BestMovesComponent({
   const [detachedEngineId, setDetachedEngineId] = useAtom(currentDetachedEngineAtom);
   const isDetached = detachedEngineId === engine.id;
   const theme = useMantineTheme();
+  const maia = engine.type === "local" && isMaiaEngine(engine);
 
   const [pos, error] = positionFromFen(fen);
   if (pos) {
@@ -177,6 +181,7 @@ function BestMovesComponent({
           <EngineTop
             name={engine.name}
             engineVariations={engineVariations}
+            humanPrediction={maia}
             isGameOver={isGameOver}
             enabled={settings.enabled}
             progress={progress}
@@ -229,6 +234,32 @@ function BestMovesComponent({
         </ActionIcon.Group>
       </Box>
       <Collapse in={settingsOn} px={30} pb={15}>
+        {maia && (
+          <Stack gap={4} mb="sm">
+            <Text size="sm" fw="bold">
+              Maia ELO
+            </Text>
+            <Slider
+              min={600}
+              max={2600}
+              step={100}
+              value={Number(settings.settings.find((s) => s.name === "Elo")?.value ?? 1500)}
+              label={(value) => value.toString()}
+              onChange={(value) =>
+                setSettings((prev) => ({
+                  ...prev,
+                  settings: [
+                    ...prev.settings.filter((setting) => setting.name !== "Elo"),
+                    { name: "Elo", value },
+                  ],
+                }))
+              }
+            />
+            <Text size="xs" c="dimmed">
+              Controla el nivel solicitado a Maia. No es una fuerza calibrada de Chess Lab.
+            </Text>
+          </Stack>
+        )}
         <EngineSettingsForm
           engine={engine}
           settings={settings}
@@ -308,6 +339,7 @@ function BestMovesComponent({
                     engine={engine.name}
                     moves={engineVariation.sanMoves}
                     score={engineVariation.score}
+                    humanPrediction={maia}
                     halfMoves={halfMoves}
                     threat={threat}
                     fen={threat ? swapMove(finalFen) : finalFen}
@@ -325,6 +357,7 @@ function BestMovesComponent({
 function EngineTop({
   name,
   engineVariations,
+  humanPrediction,
   isGameOver,
   enabled,
   progress,
@@ -332,6 +365,7 @@ function EngineTop({
 }: {
   name: string;
   engineVariations: BestMoves[] | undefined;
+  humanPrediction: boolean;
   isGameOver: boolean;
   enabled: boolean;
   progress: number;
@@ -363,34 +397,39 @@ function EngineTop({
           )}
       </Group>
       <Group gap="lg" wrap="nowrap">
-        {!isGameOver && engineVariations && engineVariations.length > 0 && (
-          <>
-            <Stack align="center" gap={0}>
-              <Text size="0.7rem" tt="uppercase" fw={700} className={classes.subtitle}>
-                Eval
-              </Text>
-              <Text fw="bold" fz="md">
-                {formatScore(engineVariations[0].score.value, 1) ?? 0}
-              </Text>
-            </Stack>
-            <Stack align="center" gap={0}>
-              <Text size="0.7rem" tt="uppercase" fw={700} className={classes.subtitle}>
-                Depth
-              </Text>
-              <Text fw="bold" fz="md">
-                {depth}
-              </Text>
-            </Stack>
-            <Stack align="center" gap={0}>
-              <Text size="0.7rem" tt="uppercase" fw={700} className={classes.subtitle}>
-                Nodes
-              </Text>
-              <Text fw="bold" fz="md">
-                {nodes}
-              </Text>
-            </Stack>
-          </>
-        )}
+        {!isGameOver &&
+          engineVariations &&
+          engineVariations.length > 0 &&
+          (humanPrediction ? (
+            <MaiaWdl wdl={engineVariations[0].score.wdl} />
+          ) : (
+            <>
+              <Stack align="center" gap={0}>
+                <Text size="0.7rem" tt="uppercase" fw={700} className={classes.subtitle}>
+                  Eval
+                </Text>
+                <Text fw="bold" fz="md">
+                  {formatScore(engineVariations[0].score.value, 1) ?? 0}
+                </Text>
+              </Stack>
+              <Stack align="center" gap={0}>
+                <Text size="0.7rem" tt="uppercase" fw={700} className={classes.subtitle}>
+                  Depth
+                </Text>
+                <Text fw="bold" fz="md">
+                  {depth}
+                </Text>
+              </Stack>
+              <Stack align="center" gap={0}>
+                <Text size="0.7rem" tt="uppercase" fw={700} className={classes.subtitle}>
+                  Nodes
+                </Text>
+                <Text fw="bold" fz="md">
+                  {nodes}
+                </Text>
+              </Stack>
+            </>
+          ))}
       </Group>
     </Group>
   );

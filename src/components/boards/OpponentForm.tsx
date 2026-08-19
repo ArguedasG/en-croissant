@@ -15,6 +15,7 @@ import {
   TextInput,
 } from "@mantine/core";
 import { IconAlertTriangle, IconCpu, IconRobot, IconUser } from "@tabler/icons-react";
+import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { GoMode } from "@/bindings";
 import GoModeInput from "@/components/common/GoModeInput";
@@ -31,9 +32,14 @@ import {
   type EnginePlayerPresetId,
 } from "@/utils/enginePresets";
 import {
+  buildMaiaEngineSettings,
+  clampMaiaElo,
   DEFAULT_HUMAN_BOT_PROFILE_ID,
+  DEFAULT_MAIA_ELO,
   getHumanBotProfile,
   HUMAN_BOT_PROFILES,
+  MAIA_ELO_MAX,
+  MAIA_ELO_MIN,
   type HumanBotProfileId,
   type HumanBotRepertoireId,
   type HumanBotStyle,
@@ -95,9 +101,84 @@ export function OpponentForm({
   showSeed?: boolean;
 }) {
   const { t } = useTranslation();
+  const [eloDraft, setEloDraft] = useState<string | null>(null);
   const humanBotProfile = getHumanBotProfile(
     opponent.type === "humanBot" ? opponent.profileId : DEFAULT_HUMAN_BOT_PROFILE_ID,
   );
+  const maiaEngine =
+    opponent.type === "engine" && opponent.engine && isMaiaEngine(opponent.engine)
+      ? opponent.engine
+      : null;
+  const opponentEnginePath = "engine" in opponent ? opponent.engine?.path : undefined;
+  const opponentPresetId = opponent.type === "engine" ? opponent.presetId : undefined;
+
+  useEffect(() => {
+    setEloDraft(null);
+  }, [opponentEnginePath, opponentPresetId, opponent.type]);
+
+  function handleEloInput(
+    value: string | number,
+    minimum: number,
+    maximum: number,
+    onValidValue: (value: number) => void,
+  ) {
+    const draft = typeof value === "number" ? String(value) : value;
+    setEloDraft(draft);
+    const numeric = Number(draft);
+    if (Number.isInteger(numeric) && numeric >= minimum && numeric <= maximum) {
+      onValidValue(numeric);
+    }
+  }
+
+  function commitEloDraft(
+    minimum: number,
+    maximum: number,
+    fallback: number,
+    onValue: (value: number) => void,
+  ) {
+    if (eloDraft === null) return;
+    const numeric = Number(eloDraft);
+    const value = Number.isFinite(numeric)
+      ? Math.max(minimum, Math.min(maximum, Math.trunc(numeric)))
+      : fallback;
+    setEloDraft(null);
+    onValue(value);
+  }
+
+  function applyMaiaElo(targetElo: number) {
+    setOpponent((prev) => {
+      if (prev.type !== "engine" || !prev.engine || !isMaiaEngine(prev.engine)) return prev;
+      return {
+        ...prev,
+        targetElo,
+        presetId: "custom",
+        engineSettings: buildMaiaEngineSettings(
+          targetElo,
+          prev.engineSettings ?? prev.engine.settings ?? [],
+        ),
+        go: { t: "Depth", c: 1 },
+      };
+    });
+  }
+
+  function applyEngineElo(targetElo: number) {
+    setOpponent((prev) => {
+      if (prev.type !== "engine") return prev;
+      const applied = applyEnginePlayerPreset(
+        prev.engineSettings ?? prev.engine?.settings ?? [],
+        prev.go,
+        "limited",
+        targetElo,
+        prev.engine?.name,
+      );
+      return {
+        ...prev,
+        targetElo,
+        engineSettings: applied.settings,
+        go: applied.go,
+      };
+    });
+  }
 
   function updateType(type: OpponentType) {
     if (type === "human") {
@@ -226,52 +307,93 @@ export function OpponentForm({
               setOpponent((prev) => {
                 if (prev.type !== "engine") return prev;
                 const presetId = prev.presetId ?? "custom";
-                const applied = applyEnginePlayerPreset(
-                  engine?.settings ?? [],
-                  prev.go,
-                  presetId,
-                  prev.targetElo ?? 1800,
-                  engine?.name,
-                );
+                const maia = Boolean(engine && isMaiaEngine(engine));
+                const previousMaia = Boolean(prev.engine && isMaiaEngine(prev.engine));
+                const targetElo = maia
+                  ? previousMaia
+                    ? (prev.targetElo ?? DEFAULT_MAIA_ELO)
+                    : DEFAULT_MAIA_ELO
+                  : (prev.targetElo ?? 1800);
+                const applied = maia
+                  ? {
+                      settings: buildMaiaEngineSettings(targetElo, engine?.settings ?? []),
+                      go: { t: "Depth", c: 1 } as GoMode,
+                    }
+                  : applyEnginePlayerPreset(
+                      engine?.settings ?? [],
+                      prev.go,
+                      presetId,
+                      targetElo,
+                      engine?.name,
+                    );
                 return {
                   ...prev,
                   engine,
                   engineSettings: applied.settings,
                   go: applied.go,
-                  presetId,
+                  presetId: maia ? "custom" : presetId,
+                  targetElo: maia ? targetElo : prev.targetElo,
                 };
               })
             }
           />
-          <Select
-            allowDeselect={false}
-            label={t("EnginePresets.Category", "Player/engine category")}
-            data={ENGINE_PLAYER_PRESETS.map((preset) => ({
-              value: preset.id,
-              label: t(`EnginePresets.${preset.id}.Label`, preset.label),
-            }))}
-            value={opponent.presetId ?? "custom"}
-            onChange={(value) =>
-              setOpponent((prev) => {
-                if (prev.type !== "engine" || !value) return prev;
-                const presetId = value as EnginePlayerPresetId;
-                const applied = applyEnginePlayerPreset(
-                  prev.engineSettings ?? prev.engine?.settings ?? [],
-                  prev.go,
-                  presetId,
-                  prev.targetElo ?? 1800,
-                  prev.engine?.name,
+          {!maiaEngine && (
+            <Select
+              allowDeselect={false}
+              label={t("EnginePresets.Category", "Player/engine category")}
+              data={ENGINE_PLAYER_PRESETS.map((preset) => ({
+                value: preset.id,
+                label: t(`EnginePresets.${preset.id}.Label`, preset.label),
+              }))}
+              value={opponent.presetId ?? "custom"}
+              onChange={(value) =>
+                setOpponent((prev) => {
+                  if (prev.type !== "engine" || !value) return prev;
+                  const presetId = value as EnginePlayerPresetId;
+                  const applied = applyEnginePlayerPreset(
+                    prev.engineSettings ?? prev.engine?.settings ?? [],
+                    prev.go,
+                    presetId,
+                    prev.targetElo ?? 1800,
+                    prev.engine?.name,
+                  );
+                  return {
+                    ...prev,
+                    presetId,
+                    engineSettings: applied.settings,
+                    go: applied.go,
+                  };
+                })
+              }
+            />
+          )}
+          {maiaEngine && (
+            <NumberInput
+              label={t("HumanBots.MaiaElo", "Maia ELO")}
+              description={t(
+                "HumanBots.MaiaElo.Desc",
+                "Controls Maia's requested model level. Depth, nodes and Stockfish presets are not used.",
+              )}
+              min={MAIA_ELO_MIN}
+              max={MAIA_ELO_MAX}
+              step={100}
+              value={eloDraft ?? opponent.targetElo ?? DEFAULT_MAIA_ELO}
+              onChange={(value) => {
+                handleEloInput(value, MAIA_ELO_MIN, MAIA_ELO_MAX, (targetElo) =>
+                  applyMaiaElo(clampMaiaElo(targetElo)),
                 );
-                return {
-                  ...prev,
-                  presetId,
-                  engineSettings: applied.settings,
-                  go: applied.go,
-                };
-              })
-            }
-          />
-          {opponent.presetId === "limited" && (
+              }}
+              onBlur={() =>
+                commitEloDraft(
+                  MAIA_ELO_MIN,
+                  MAIA_ELO_MAX,
+                  opponent.targetElo ?? DEFAULT_MAIA_ELO,
+                  (targetElo) => applyMaiaElo(clampMaiaElo(targetElo)),
+                )
+              }
+            />
+          )}
+          {!maiaEngine && opponent.presetId === "limited" && (
             <NumberInput
               label={t("EnginePresets.RequestedElo", "ELO requested from the engine")}
               description={t(
@@ -281,46 +403,33 @@ export function OpponentForm({
               min={1320}
               max={3190}
               step={50}
-              value={opponent.targetElo ?? 1800}
+              value={eloDraft ?? opponent.targetElo ?? 1800}
               onChange={(value) => {
-                if (typeof value !== "number") return;
-                setOpponent((prev) => {
-                  if (prev.type !== "engine") return prev;
-                  const targetElo = Math.max(1320, Math.min(3190, Math.trunc(value)));
-                  const applied = applyEnginePlayerPreset(
-                    prev.engineSettings ?? prev.engine?.settings ?? [],
-                    prev.go,
-                    "limited",
-                    targetElo,
-                    prev.engine?.name,
-                  );
-                  return {
-                    ...prev,
-                    targetElo,
-                    engineSettings: applied.settings,
-                    go: applied.go,
-                  };
-                });
+                handleEloInput(value, 1320, 3190, applyEngineElo);
               }}
+              onBlur={() => commitEloDraft(1320, 3190, opponent.targetElo ?? 1800, applyEngineElo)}
             />
           )}
-          <Text size="xs" c="dimmed">
-            {t(
-              `EnginePresets.${opponent.presetId ?? "custom"}.Desc`,
-              getEnginePresetDescription(opponent.presetId ?? "custom"),
-            )}
-          </Text>
-          {getEnginePresetNodeBudget(opponent.presetId ?? "custom", opponent.engine?.name) && (
-            <Text size="xs" c="blue">
-              {t("EnginePresets.MctsBudget", {
-                defaultValue: "Lc0/MCTS budget: {{nodes}} nodes per move.",
-                nodes: getEnginePresetNodeBudget(
-                  opponent.presetId ?? "custom",
-                  opponent.engine?.name,
-                )?.toLocaleString(),
-              })}
+          {!maiaEngine && (
+            <Text size="xs" c="dimmed">
+              {t(
+                `EnginePresets.${opponent.presetId ?? "custom"}.Desc`,
+                getEnginePresetDescription(opponent.presetId ?? "custom"),
+              )}
             </Text>
           )}
+          {!maiaEngine &&
+            getEnginePresetNodeBudget(opponent.presetId ?? "custom", opponent.engine?.name) && (
+              <Text size="xs" c="blue">
+                {t("EnginePresets.MctsBudget", {
+                  defaultValue: "Lc0/MCTS budget: {{nodes}} nodes per move.",
+                  nodes: getEnginePresetNodeBudget(
+                    opponent.presetId ?? "custom",
+                    opponent.engine?.name,
+                  )?.toLocaleString(),
+                })}
+              </Text>
+            )}
         </Stack>
       )}
 
@@ -533,7 +642,7 @@ export function OpponentForm({
 
       {opponent.type === "engine" && (
         <Stack>
-          {!opponent.timeControl && (
+          {!opponent.timeControl && !maiaEngine && (
             <GoModeInput
               gameMode
               goMode={opponent.go}
@@ -551,8 +660,16 @@ export function OpponentForm({
               }
             />
           )}
+          {maiaEngine && (
+            <Text size="xs" c="dimmed">
+              {t(
+                "HumanBots.MaiaGameSettings",
+                "Maia games use one bounded model decision per move; adjust the ELO above instead of Depth or Nodes.",
+              )}
+            </Text>
+          )}
           <Divider variant="dashed" label={t("Board.Opponent.EngineSettings", "Engine Settings")} />
-          {opponent.engine && (
+          {opponent.engine && !maiaEngine && (
             <EngineSettingsForm
               engine={opponent.engine}
               remote={false}

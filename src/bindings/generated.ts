@@ -518,6 +518,38 @@ async getModelGameExperiment(experimentId: string) : Promise<Result<ModelGameExp
     else return { status: "error", error: e  as any };
 }
 },
+async analyzeModelGameExperiment(analysisId: string, experimentId: string, engine: string, engineArgs: string[], goMode: GoMode, uciOptions: EngineOption[]) : Promise<Result<ExperimentAnalysisResult, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("analyze_model_game_experiment", { analysisId, experimentId, engine, engineArgs, goMode, uciOptions }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async getModelGameExperimentAnalysis(experimentId: string) : Promise<Result<ExperimentAnalysisResult | null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_model_game_experiment_analysis", { experimentId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async analyzeModelGameExperimentEmpiricalWdl(experimentId: string, engine: string, engineArgs: string[], goMode: GoMode, uciOptions: EngineOption[]) : Promise<Result<EmpiricalWdlResult, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("analyze_model_game_experiment_empirical_wdl", { experimentId, engine, engineArgs, goMode, uciOptions }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async getModelGameExperimentEmpiricalWdl(experimentId: string) : Promise<Result<EmpiricalWdlResult | null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_model_game_experiment_empirical_wdl", { experimentId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async readModelGameExperimentGame(experimentId: string, index: number) : Promise<Result<ModelGameExperimentGameArtifact, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("read_model_game_experiment_game", { experimentId, index }) };
@@ -534,9 +566,9 @@ async deleteModelGameExperiment(experimentId: string) : Promise<Result<null, str
     else return { status: "error", error: e  as any };
 }
 },
-async exportModelGameExperiment(experimentId: string, destinationDirectory: string) : Promise<Result<string, string>> {
+async exportModelGameExperiment(experimentId: string, destinationDirectory: string, folderName: string) : Promise<Result<string, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("export_model_game_experiment", { experimentId, destinationDirectory }) };
+    return { status: "ok", data: await TAURI_INVOKE("export_model_game_experiment", { experimentId, destinationDirectory, folderName }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -624,12 +656,25 @@ export type ClockUpdateEvent = { gameId: string; whiteTime: bigint | null; black
 export type DatabaseInfo = { title: string; description: string; player_count: number; event_count: number; game_count: number; storage_size: bigint; filename: string; indexed: boolean }
 export type DatabaseProgress = { id: string; progress: number }
 export type DrawReason = "stalemate" | "insufficientMaterial" | "threefoldRepetition" | "fiftyMoveRule" | "agreement"
+export type EmpiricalWdlCalibration = { meanAbsoluteError: number; brierScore: number }
+export type EmpiricalWdlEvaluator = { engine: string; engineArgs: string[]; goMode: GoMode; uciOptions: EngineOption[] }
+export type EmpiricalWdlInterval = { lower: number; upper: number }
+export type EmpiricalWdlObserved = { sampleSize: number; whiteWins: number; draws: number; blackWins: number; whiteWin: number; draw: number; blackWin: number; whiteWinInterval: EmpiricalWdlInterval; drawInterval: EmpiricalWdlInterval; blackWinInterval: EmpiricalWdlInterval }
+export type EmpiricalWdlPrediction = { whiteWin: number; draw: number; blackWin: number; rawWhiteWin: number; rawDraw: number; rawBlackWin: number }
+export type EmpiricalWdlResult = { schemaVersion: number; experimentId: string; analyzedAt: string; initialFen: string; initialMoves: string[]; evaluator: EmpiricalWdlEvaluator; prediction: EmpiricalWdlPrediction; observed: EmpiricalWdlObserved; calibration: EmpiricalWdlCalibration }
 export type EngineConfig = { name: string; options: UciOptionConfig[] }
 export type EngineLaunchMetadata = { path: string; resolvedArgs: string[]; randomSeed: number | null; appliedOptions: EngineOption[]; skippedUnsupportedOptions: string[] }
 export type EngineLog = { type: "gui"; value: string } | { type: "engine"; value: string }
 export type EngineOption = { name: string; value: string }
 export type EngineOptions = { fen: string; moves: string[]; extraOptions: EngineOption[] }
 export type Event = { id: number; name: string | null }
+export type ExperimentAnalysisEvaluator = { engine: string; engineArgs: string[]; goMode: GoMode; uciOptions: EngineOption[]; inaccuracyThresholdCp: number; mistakeThresholdCp: number; blunderThresholdCp: number }
+export type ExperimentAnalysisGame = { index: number; gameId: string; whitePlayer: string; blackPlayer: string; result: GameResult | null; analyzedPlies: number; white: ExperimentAnalysisSideMetrics; black: ExperimentAnalysisSideMetrics; phases: ExperimentAnalysisPhaseMetrics[] }
+export type ExperimentAnalysisPhaseMetrics = { phase: string; moves: number; acpl: number | null; inaccuracies: number; mistakes: number; blunders: number }
+export type ExperimentAnalysisPlayerMetrics = { name: string; games: number; whiteGames: number; blackGames: number; wins: number; draws: number; losses: number; moves: number; acpl: number | null; inaccuracies: number; mistakes: number; blunders: number }
+export type ExperimentAnalysisResult = { schemaVersion: number; experimentId: string; analyzedAt: string; evaluator: ExperimentAnalysisEvaluator; summary: ExperimentAnalysisSummary; games: ExperimentAnalysisGame[] }
+export type ExperimentAnalysisSideMetrics = { moves: number; acpl: number | null; inaccuracies: number; mistakes: number; blunders: number }
+export type ExperimentAnalysisSummary = { sampleSize: number; skippedGames: number; analyzedPlies: number; whiteWins: number; blackWins: number; draws: number; averagePlies: number | null; white: ExperimentAnalysisSideMetrics; black: ExperimentAnalysisSideMetrics; players: ExperimentAnalysisPlayerMetrics[]; phases: ExperimentAnalysisPhaseMetrics[] }
 export type FileMetadata = { last_modified: number }
 export type GameConfig = { white: PlayerConfig; black: PlayerConfig; whiteTimeControl: TimeControl | null; blackTimeControl: TimeControl | null; initialFen: string | null; initialMoves?: string[]; openingBook: OpeningBookConfig | null }
 export type GameEndReason = "checkmate" | "timeout" | "resignation" | "abandonment"

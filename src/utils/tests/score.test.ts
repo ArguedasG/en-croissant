@@ -1,5 +1,12 @@
 import { expect, test } from "vitest";
-import { formatScore, getAccuracy, getAnnotation, getCPLoss, getWinChance } from "../score";
+import {
+    formatScore,
+    getAccuracy,
+    getAnnotation,
+    getCPLoss,
+    getWdlPercentages,
+    getWinChance,
+} from "../score";
 
 test("should format a positive cp score correctly", () => {
     expect(formatScore({ type: "cp", value: 50 })).toBe("+0.50");
@@ -18,6 +25,24 @@ test("should calculate the win chance correctly", () => {
     expect(getWinChance(0)).toBe(50);
     expect(getWinChance(100)).toBeCloseTo(59.1);
     expect(getWinChance(-500)).toBeCloseTo(13.69);
+});
+
+test("should normalize UCI WDL counts into percentages", () => {
+    expect(getWdlPercentages([500, 250, 250])).toEqual({
+        win: 50,
+        draw: 25,
+        loss: 25,
+    });
+    expect(getWdlPercentages([1, 2, 1])).toEqual({
+        win: 25,
+        draw: 50,
+        loss: 25,
+    });
+});
+
+test("should reject missing or empty WDL counts", () => {
+    expect(getWdlPercentages(null)).toBeNull();
+    expect(getWdlPercentages([0, 0, 0])).toBeNull();
 });
 
 test("should calculate the accuracy correctly", () => {

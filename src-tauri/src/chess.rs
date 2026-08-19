@@ -241,6 +241,71 @@ fn parse_uci_attrs(
     Ok(best_moves)
 }
 
+/// Runs one bounded search and returns the score from White's perspective.
+/// The caller owns the engine process so several positions can be analyzed
+/// without spawning a new process for every ply.
+pub(crate) async fn evaluate_position_score(
+    base: &mut BaseEngine,
+    reader: &mut EngineReader,
+    fen: &str,
+    moves: &[String],
+    go_mode: &GoMode,
+) -> Result<ScoreValue, Error> {
+    base.set_position(fen, moves).await?;
+    base.go(go_mode).await?;
+
+    let parsed_fen: Fen = fen.parse()?;
+    let mut latest_score = None;
+
+    while let Some(line) = reader.next_line().await? {
+        base.log_engine(&line);
+        match parse_one(&line) {
+            UciMessage::Info(attrs) => {
+                if let Ok(best_moves) = parse_uci_attrs(attrs, &parsed_fen, moves) {
+                    latest_score = Some(best_moves.score.value);
+                }
+            }
+            UciMessage::BestMove { .. } => break,
+            _ => {}
+        }
+    }
+
+    latest_score.ok_or(Error::NoMovesFound)
+}
+
+/// Runs one bounded search and returns the score and W/D/L from White's perspective.
+pub(crate) async fn evaluate_position_wdl(
+    base: &mut BaseEngine,
+    reader: &mut EngineReader,
+    fen: &str,
+    moves: &[String],
+    go_mode: &GoMode,
+) -> Result<Option<(u32, u32, u32)>, Error> {
+    base.set_position(fen, moves).await?;
+    base.go(go_mode).await?;
+
+    let parsed_fen: Fen = fen.parse()?;
+    let mut latest_wdl = None;
+
+    while let Some(line) = reader.next_line().await? {
+        base.log_engine(&line);
+        match parse_one(&line) {
+            UciMessage::Info(attrs) => {
+                if let Ok(best_moves) = parse_uci_attrs(attrs, &parsed_fen, moves) {
+                    if let Some((win, draw, loss)) = best_moves.score.wdl {
+                        latest_wdl =
+                            Some((win.max(0) as u32, draw.max(0) as u32, loss.max(0) as u32));
+                    }
+                }
+            }
+            UciMessage::BestMove { .. } => break,
+            _ => {}
+        }
+    }
+
+    Ok(latest_wdl)
+}
+
 #[derive(Deserialize, Debug, Clone, Type, Derivative, Eq, PartialEq)]
 #[serde(rename_all = "camelCase")]
 #[derivative(Default)]

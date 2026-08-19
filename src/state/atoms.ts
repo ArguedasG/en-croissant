@@ -22,6 +22,7 @@ import { positionFromFen, swapMove } from "@/utils/chessops";
 import type { SuccessDatabaseInfo } from "@/utils/db";
 import { type Engine, type EngineSettings, engineSchema } from "@/utils/engines";
 import type { HumanBotGameMeasurement } from "@/utils/humanBotMeasurements";
+import { isMaiaEngine } from "@/utils/humanBots";
 import {
     EMPTY_HUMAN_BOT_HISTORY,
     humanBotHistoryStateSchema,
@@ -631,7 +632,9 @@ export const bestMovesFamily = atomFamily(
             if (!engines) return new Map();
             const bestMoves = new Map<number, { pv: string[]; winChance: number }[]>();
             let n = 0;
-            for (const engine of engines.filter((e) => e.loaded)) {
+            for (const engine of engines.filter(
+                (e) => e.loaded && !(e.type === "local" && isMaiaEngine(e)),
+            )) {
                 const engineMoves = get(engineMovesFamily({ tab, engine: engine.id }));
                 const [pos] = positionFromFen(fen);
                 let finalFen = INITIAL_FEN;

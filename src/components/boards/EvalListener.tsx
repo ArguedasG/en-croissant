@@ -25,6 +25,7 @@ import {
   getBestMoves as localGetBestMoves,
   stopEngine,
 } from "@/utils/engines";
+import { isMaiaEngine } from "@/utils/humanBots";
 import { getBestMoves as lichessGetBestMoves } from "@/utils/lichess/api";
 import { useThrottledEffect } from "@/utils/misc";
 import { TreeStateContext } from "../common/TreeStateContext";
@@ -156,7 +157,9 @@ function EngineListener({
           });
           setProgress(payload.progress);
           const shouldSetScore =
-            firstEngineWithLines === engine.id || firstEngineWithLines === null;
+            engine.type !== "local" || !isMaiaEngine(engine)
+              ? firstEngineWithLines === engine.id || firstEngineWithLines === null
+              : false;
           if (shouldSetScore) {
             setScore(ev[0].score);
           }

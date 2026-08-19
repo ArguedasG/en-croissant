@@ -74,11 +74,13 @@ import { getPGN } from "@/utils/chess";
 import { serializeGameManifest } from "@/utils/gameManifest";
 import { buildHumanBotHistoryGame, EMPTY_HUMAN_BOT_HISTORY } from "@/utils/humanBotHistory";
 import {
+  buildMaiaEngineSettings,
   buildHumanBotEngineArgs,
   buildHumanBotEngineSettings,
   buildHumanBotOpeningRepertoire,
   buildHumanBotTiming,
   buildHumanBotTraceHeaders,
+  clampMaiaElo,
   getHumanBotProfile,
   isMaiaEngine,
 } from "@/utils/humanBots";
@@ -211,6 +213,7 @@ function BoardGame({ generatorMode = false }: { generatorMode?: boolean }) {
   const [batchSettings, setBatchSettings] = useAtom(modelGameBatchSettingsAtom);
   const [batchId, setBatchId] = useAtom(currentModelGameBatchIdAtom);
   const [batchState, setBatchState] = useState<ModelGameBatchState | null>(null);
+  const [requestedExperimentId, setRequestedExperimentId] = useState<string | null>(null);
 
   function swapModelGameColors() {
     if (!generatorMode) return;
@@ -463,22 +466,39 @@ function BoardGame({ generatorMode = false }: { generatorMode?: boolean }) {
       };
     }
 
+    const maia = Boolean(settings.engine && isMaiaEngine(settings.engine));
+    const targetElo = clampMaiaElo(settings.targetElo ?? 1500);
+    const engineSettings = maia
+      ? buildMaiaEngineSettings(
+          targetElo,
+          settings.engineSettings ?? settings.engine?.settings ?? [],
+        )
+      : (settings.engineSettings ?? settings.engine?.settings ?? []);
+
     return {
       type: "engine",
       name: settings.engine?.name ?? "Engine",
       path: settings.engine?.path ?? "",
       version: settings.engine?.version ?? "",
-      presetCategory: settings.presetId ?? "custom",
-      targetElo: settings.presetId === "limited" ? (settings.targetElo ?? 1800) : null,
+      presetCategory: maia ? "humanLike" : (settings.presetId ?? "custom"),
+      targetElo: maia
+        ? targetElo
+        : settings.presetId === "limited"
+          ? (settings.targetElo ?? 1800)
+          : null,
       seed: settings.seed ?? null,
-      args: settings.engine?.args ?? [],
-      options: (settings.engineSettings ?? settings.engine?.settings ?? []).map((s) => ({
+      args: maia
+        ? buildHumanBotEngineArgs(settings.engine?.args ?? [])
+        : (settings.engine?.args ?? []),
+      options: engineSettings.map((s) => ({
         name: s.name,
         value: s.name === "MultiPV" ? "1" : (s.value?.toString() ?? ""),
       })),
       go: settings.timeControl
         ? null
-        : normalizeEngineGoMode(settings.go, settings.engine?.name),
+        : maia
+          ? { t: "Depth", c: 1 }
+          : normalizeEngineGoMode(settings.go, settings.engine?.name),
     };
   }
 
@@ -558,6 +578,7 @@ function BoardGame({ generatorMode = false }: { generatorMode?: boolean }) {
       );
       setBatchId(newBatchId);
       setBatchState(state);
+      setRequestedExperimentId(null);
     } catch (err) {
       notifications.show({
         title: t("ModelGame.Batch.Start.Error", "Could not start the batch"),
@@ -1083,6 +1104,7 @@ function BoardGame({ generatorMode = false }: { generatorMode?: boolean }) {
     }
     setBatchId(null);
     setBatchState(null);
+    setRequestedExperimentId(null);
   }
 
   async function handleAnalyzeBatchGame(index: number) {
@@ -1278,6 +1300,9 @@ function BoardGame({ generatorMode = false }: { generatorMode?: boolean }) {
               onResume={handleResumeBatch}
               onCancel={handleCancelBatch}
               onEdit={handleEditBatch}
+              onOpenExperiment={() => {
+                if (batchId) setRequestedExperimentId(batchId);
+              }}
               onAnalyze={handleAnalyzeBatchGame}
             />
           ) : (
@@ -1562,6 +1587,12 @@ function BoardGame({ generatorMode = false }: { generatorMode?: boolean }) {
                 </Stack>
               )}
             </>
+          )}
+          {generatorMode && batchState && (
+            <ModelGameExperimentHistory
+              requestedExperimentId={requestedExperimentId}
+              showPanel={false}
+            />
           )}
         </Paper>
       </Portal>

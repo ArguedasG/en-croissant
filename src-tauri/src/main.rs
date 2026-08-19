@@ -30,10 +30,12 @@ use derivative::Derivative;
 use game::GameManager;
 use model_game_batch::ModelGameBatchManager;
 use model_game_experiment::{
+    analyze_model_game_experiment, analyze_model_game_experiment_empirical_wdl,
     delete_model_game_experiment, export_model_game_experiment,
     finalize_single_model_game_experiment, finalize_single_model_game_experiments_for_owner,
-    get_model_game_experiment, list_model_game_experiments, read_model_game_experiment_game,
-    start_single_model_game_experiment,
+    get_model_game_experiment, get_model_game_experiment_analysis,
+    get_model_game_experiment_empirical_wdl, list_model_game_experiments,
+    read_model_game_experiment_game, start_single_model_game_experiment,
 };
 use progress::{clear_progress, get_progress, ProgressEvent, ProgressStore};
 
@@ -190,6 +192,10 @@ fn main() {
             dismiss_model_game_batch,
             list_model_game_experiments,
             get_model_game_experiment,
+            analyze_model_game_experiment,
+            get_model_game_experiment_analysis,
+            analyze_model_game_experiment_empirical_wdl,
+            get_model_game_experiment_empirical_wdl,
             read_model_game_experiment_game,
             delete_model_game_experiment,
             export_model_game_experiment,

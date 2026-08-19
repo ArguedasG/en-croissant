@@ -4,6 +4,12 @@ import { match } from "ts-pattern";
 import type { BestMoves, Score, ScoreValue } from "@/bindings";
 import type { Annotation } from "./annotation";
 
+export type WdlPercentages = {
+    win: number;
+    draw: number;
+    loss: number;
+};
+
 export const INITIAL_SCORE: Score = {
     value: {
         type: "cp",
@@ -11,6 +17,23 @@ export const INITIAL_SCORE: Score = {
     },
     wdl: null,
 };
+
+/**
+ * Converts UCI WDL counts into percentages without assuming a fixed scale.
+ * Maia and reference engines may emit different total scales.
+ */
+export function getWdlPercentages(wdl: Score["wdl"]): WdlPercentages | null {
+    if (!wdl) return null;
+
+    const total = wdl[0] + wdl[1] + wdl[2];
+    if (total <= 0) return null;
+
+    return {
+        win: (wdl[0] / total) * 100,
+        draw: (wdl[1] / total) * 100,
+        loss: (wdl[2] / total) * 100,
+    };
+}
 
 const CP_CEILING = 1000;
 

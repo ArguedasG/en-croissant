@@ -38,10 +38,12 @@ import {
 import { getVariationLine } from "@/utils/chess";
 import { getPiecesCount, hasCaptures, isOp1, positionFromFen } from "@/utils/chessops";
 import type { Engine } from "@/utils/engines";
+import { isMaiaEngine } from "@/utils/humanBots";
 import { getInitials } from "@/utils/format";
 import BestMoves, { arrowColors } from "./BestMoves";
 import EngineSelection from "./EngineSelection";
 import LogsPanel from "./LogsPanel";
+import MaiaWdl from "./MaiaWdl";
 import ReportPanel from "./ReportPanel";
 import ScoreBubble from "./ScoreBubble";
 import TablebaseInfo from "./TablebaseInfo";
@@ -311,6 +313,7 @@ function EngineSummary({
     useMemo(() => ev.get(`${fen}:${moves.join(",")}`), [ev, fen, moves]),
   );
   const score = curEval && curEval.length > 0 ? curEval[0].score : null;
+  const maia = engine.type === "local" && isMaiaEngine(engine);
 
   return (
     <Card withBorder c={arrowColors[i]?.strong} py={4} px="xs">
@@ -328,7 +331,11 @@ function EngineSummary({
             : engine.name}
         </Text>
         {score ? (
-          <ScoreBubble size="sm" score={score} />
+          maia ? (
+            <MaiaWdl wdl={score.wdl} compact />
+          ) : (
+            <ScoreBubble size="sm" score={score} />
+          )
         ) : (
           <Text fz="sm" c="dimmed">
             ???

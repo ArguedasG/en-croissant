@@ -520,6 +520,37 @@ export const HUMAN_BOT_PROFILES: readonly HumanBotProfile[] =
 
 export const DEFAULT_HUMAN_BOT_PROFILE_ID: HumanBotProfileId = "vera";
 
+export const MAIA_ELO_MIN = 600;
+export const MAIA_ELO_MAX = 2600;
+export const DEFAULT_MAIA_ELO = 1500;
+
+export function clampMaiaElo(value: number): number {
+    return Math.max(MAIA_ELO_MIN, Math.min(MAIA_ELO_MAX, Math.trunc(value)));
+}
+
+export function buildMaiaEngineSettings(
+    elo: number,
+    baseSettings: EngineSettings = [],
+): EngineSettings {
+    const maiaOptionNames = new Set([
+        "Elo",
+        "SelfElo",
+        "OppoElo",
+        "Temperature",
+        "TopP",
+        "MultiPV",
+    ]);
+    const preservedSettings = baseSettings.filter((setting) => maiaOptionNames.has(setting.name));
+
+    return [
+        ...preservedSettings.filter(
+            (setting) => setting.name !== "Elo" && setting.name !== "MultiPV",
+        ),
+        { name: "Elo", value: clampMaiaElo(elo) },
+        { name: "MultiPV", value: 1 },
+    ];
+}
+
 export function getHumanBotProfile(profileId: string | null | undefined): HumanBotProfile {
     return (
         HUMAN_BOT_PROFILES.find((profile) => profile.id === profileId) ??
