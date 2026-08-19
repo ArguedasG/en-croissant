@@ -80,6 +80,13 @@ describe("human bot measurements", () => {
         });
 
         expect(buildHumanBotMeasurementHeaders(measurement)).toMatchObject({
+            BlackBotProfileVersion: "3",
+            BlackBotCatalogVersion: "4.4.0",
+            BlackBotRepertoireMode: "weighted",
+            BlackBotAggression: "high",
+            BlackBotComplexity: "high",
+            BlackBotOpeningSharpness: "medium",
+            BlackBotOpeningTheory: "low",
             BlackBotMoves: "1",
             BlackBotRepertoireMoves: "1",
             BlackBotRepertoireLastPly: "1",
@@ -90,7 +97,8 @@ describe("human bot measurements", () => {
 
         const csv = humanBotMeasurementsToCsv([measurement]);
         expect(csv).toContain("repertoireLastBotMove");
-        expect(csv).toContain(",luna,900,novice-900,");
+        expect(csv).toContain(",black,luna,3,4.4.0,900,novice-900,");
+        expect(csv).toContain("repertoireMode");
     });
 
     it("summarizes observed repertoire use and thinking time by profile", () => {

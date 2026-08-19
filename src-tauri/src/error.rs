@@ -78,6 +78,15 @@ pub enum Error {
     #[error("Invalid model game batch: {0}")]
     InvalidModelGameBatch(String),
 
+    #[error("Bot league not found: {0}")]
+    BotLeagueNotFound(String),
+
+    #[error("Invalid bot league: {0}")]
+    InvalidBotLeague(String),
+
+    #[error("Bot league game not found: {league_id}, game {index}")]
+    BotLeagueGameNotFound { league_id: String, index: u32 },
+
     #[error("Model game experiment not found: {0}")]
     ModelGameExperimentNotFound(String),
 

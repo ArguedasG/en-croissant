@@ -1,8 +1,16 @@
 import type { GameMove, Outcome } from "@/bindings";
-import type { HumanBotProfile } from "./humanBots";
+import {
+    HUMAN_BOT_CATALOG_VERSION,
+    HUMAN_BOT_MODEL_ID,
+    type HumanBotProfile,
+    type HumanBotRepertoireMode,
+    type HumanBotStyleAxisLevel,
+    type HumanBotStyleEvidence,
+} from "./humanBots";
 
 export type HumanBotMeasurementPlayer = {
     profile: HumanBotProfile;
+    modelVersion?: string | null;
     humanTimingEnabled: boolean;
     timeControl?: {
         seconds: number;
@@ -13,9 +21,20 @@ export type HumanBotMeasurementPlayer = {
 export type HumanBotPlayerMeasurement = {
     color: "white" | "black";
     profileId: string;
+    profileVersion?: number;
+    catalogVersion?: string;
     levelId: string;
     samplingStyleId: string;
     repertoireId: string;
+    repertoireVersion?: number;
+    repertoireMode?: HumanBotRepertoireMode;
+    modelId?: string;
+    modelVersion?: string | null;
+    styleEvidence?: HumanBotStyleEvidence;
+    aggression?: HumanBotStyleAxisLevel | null;
+    complexity?: HumanBotStyleAxisLevel | null;
+    openingSharpness?: HumanBotStyleAxisLevel | null;
+    openingTheory?: HumanBotStyleAxisLevel | null;
     timingId: string;
     elo: number;
     configuredRepertoireMaxPly: number;
@@ -78,9 +97,20 @@ function measurePlayer(
     return {
         color,
         profileId: player.profile.id,
+        profileVersion: player.profile.profileVersion,
+        catalogVersion: HUMAN_BOT_CATALOG_VERSION,
         levelId: player.profile.levelId,
         samplingStyleId: player.profile.samplingStyleId,
         repertoireId: player.profile.repertoireId,
+        repertoireVersion: player.profile.repertoire.version,
+        repertoireMode: player.profile.repertoire.mode,
+        modelId: HUMAN_BOT_MODEL_ID,
+        modelVersion: player.modelVersion ?? null,
+        styleEvidence: player.profile.styleEvidence,
+        aggression: player.profile.decisionStyle?.aggression ?? null,
+        complexity: player.profile.decisionStyle?.complexity ?? null,
+        openingSharpness: player.profile.openingStyle?.sharpness ?? null,
+        openingTheory: player.profile.openingStyle?.theory ?? null,
         timingId: player.profile.timingId,
         elo: player.profile.elo,
         configuredRepertoireMaxPly: player.profile.repertoire.maxPly,
@@ -143,6 +173,17 @@ export function buildHumanBotMeasurementHeaders(
 
     for (const bot of measurement.bots) {
         const prefix = bot.color === "white" ? "WhiteBot" : "BlackBot";
+        headers[`${prefix}ProfileVersion`] = bot.profileVersion?.toString() ?? "-";
+        headers[`${prefix}CatalogVersion`] = bot.catalogVersion ?? "-";
+        headers[`${prefix}RepertoireVersion`] = bot.repertoireVersion?.toString() ?? "-";
+        headers[`${prefix}RepertoireMode`] = bot.repertoireMode ?? "-";
+        headers[`${prefix}Model`] = bot.modelId ?? "-";
+        headers[`${prefix}ModelVersion`] = bot.modelVersion ?? "-";
+        headers[`${prefix}StyleEvidence`] = bot.styleEvidence ?? "-";
+        headers[`${prefix}Aggression`] = bot.aggression ?? "-";
+        headers[`${prefix}Complexity`] = bot.complexity ?? "-";
+        headers[`${prefix}OpeningSharpness`] = bot.openingSharpness ?? "-";
+        headers[`${prefix}OpeningTheory`] = bot.openingTheory ?? "-";
         headers[`${prefix}Moves`] = bot.moveCount.toString();
         headers[`${prefix}RepertoireMoves`] = bot.repertoireMoves.toString();
         headers[`${prefix}RepertoireLastPly`] = bot.repertoireLastPly?.toString() ?? "-";
@@ -204,8 +245,8 @@ export function summarizeHumanBotMeasurements(
         .sort((left, right) => left.elo - right.elo);
 }
 
-function csvCell(value: string | number | boolean | null): string {
-    if (value === null) return "";
+function csvCell(value: string | number | boolean | null | undefined): string {
+    if (value === null || value === undefined) return "";
     const text = String(value);
     return /[",\n]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text;
 }
@@ -214,10 +255,21 @@ export function humanBotMeasurementsToCsv(measurements: HumanBotGameMeasurement[
     const botColumns = [
         "color",
         "profileId",
+        "profileVersion",
+        "catalogVersion",
         "elo",
         "levelId",
         "samplingStyleId",
         "repertoireId",
+        "repertoireVersion",
+        "repertoireMode",
+        "modelId",
+        "modelVersion",
+        "styleEvidence",
+        "aggression",
+        "complexity",
+        "openingSharpness",
+        "openingTheory",
         "configuredRepertoireMaxPly",
         "timingId",
         "humanTimingEnabled",

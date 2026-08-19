@@ -1,7 +1,28 @@
 import type { EngineSettings, LocalEngine } from "./engines";
 import { RANDOM_SEED_PLACEHOLDER } from "./engines";
 
+export const HUMAN_BOT_CONFIG_VERSION = 6;
+export const HUMAN_BOT_CATALOG_VERSION = "4.4.0";
+export const HUMAN_BOT_PROFILE_VERSION = 3;
+export const HUMAN_BOT_REPERTOIRE_SCHEMA_VERSION = 2;
+export const HUMAN_BOT_MODEL_ID = "maia3";
+
 export type HumanBotStyle = "adventurous" | "balanced" | "focused";
+export type HumanBotStyleAxisLevel = "low" | "medium" | "high";
+export type HumanBotOpeningLineSide = "white" | "black" | "both";
+export type HumanBotRepertoireMode = "weighted" | "forcedLine" | "none";
+
+export type HumanBotDecisionStyle = {
+    aggression: HumanBotStyleAxisLevel;
+    complexity: HumanBotStyleAxisLevel;
+};
+
+export type HumanBotOpeningStyle = {
+    sharpness: HumanBotStyleAxisLevel;
+    theory: HumanBotStyleAxisLevel;
+};
+
+export type HumanBotStyleEvidence = "unclassified" | "editorial" | "measured";
 
 export type HumanBotLevel = {
     id: string;
@@ -27,10 +48,13 @@ export type HumanBotOpeningLine = {
     id: string;
     moves: readonly string[];
     weight: number;
+    side: HumanBotOpeningLineSide;
 };
 
 export type HumanBotRepertoire = {
     id: string;
+    version: number;
+    mode: HumanBotRepertoireMode;
     maxPly: number;
     lines: readonly HumanBotOpeningLine[];
 };
@@ -38,6 +62,7 @@ export type HumanBotRepertoire = {
 export type HumanBotProfile = {
     id: string;
     name: string;
+    profileVersion: number;
     levelId: string;
     samplingStyleId: string;
     timingId: string;
@@ -48,23 +73,37 @@ export type HumanBotProfile = {
     topP: number;
     repertoire: HumanBotRepertoire;
     timing: HumanBotTiming;
+    decisionStyle: HumanBotDecisionStyle | null;
+    openingStyle: HumanBotOpeningStyle | null;
+    styleEvidence: HumanBotStyleEvidence;
 };
 
 export type HumanBotOpeningRepertoireConfig = {
     id: string;
+    version: number;
+    mode: HumanBotRepertoireMode;
     maxPly: number;
-    lines: { moves: string[]; weight: number }[];
+    lines: { moves: string[]; weight: number; side: HumanBotOpeningLineSide }[];
 };
 
 export type HumanBotTimingConfig = Omit<HumanBotTiming, "id">;
 
 export const HUMAN_BOT_LEVELS = [
     { id: "novice-900", elo: 900 },
+    { id: "novice-1050", elo: 1050 },
     { id: "developing-1200", elo: 1200 },
+    { id: "developing-1300", elo: 1300 },
+    { id: "club-1450", elo: 1450 },
     { id: "club-1500", elo: 1500 },
+    { id: "club-1650", elo: 1650 },
     { id: "club-1700", elo: 1700 },
+    { id: "club-1800", elo: 1800 },
     { id: "expert-1900", elo: 1900 },
+    { id: "expert-2000", elo: 2000 },
+    { id: "expert-2100", elo: 2100 },
     { id: "advanced-2200", elo: 2200 },
+    { id: "advanced-2300", elo: 2300 },
+    { id: "master-2400", elo: 2400 },
 ] as const satisfies readonly HumanBotLevel[];
 
 export const HUMAN_BOT_SAMPLING_STYLES = [
@@ -203,6 +242,23 @@ const OPENING_LINES = {
         "f2f3",
         "f8g7",
     ],
+    sicilianEnglishAttack: [
+        "e2e4",
+        "c7c5",
+        "g1f3",
+        "d7d6",
+        "d2d4",
+        "c5d4",
+        "f3d4",
+        "g8f6",
+        "b1c3",
+        "a7a6",
+        "c1e3",
+        "g7g6",
+        "f2f3",
+        "f8g7",
+    ],
+    scandinavian: ["e2e4", "d7d5", "e4d5", "d8d5", "b1c3", "d5d8", "d2d4", "g8f6"],
     caroKann: [
         "e2e4",
         "c7c6",
@@ -315,6 +371,22 @@ const OPENING_LINES = {
         "f1e2",
         "e7e5",
     ],
+    pirc: ["e2e4", "d7d6", "d2d4", "g8f6", "b1c3", "g7g6", "c1e3", "f8g7", "d1d2", "e8g8"],
+    modern: ["e2e4", "g7g6", "d2d4", "f8g7", "b1c3", "d7d6", "c1e3", "c7c6", "d1d2"],
+    kingsIndianAttack: [
+        "e2e4",
+        "e7e6",
+        "d2d3",
+        "d7d5",
+        "b1d2",
+        "g8f6",
+        "g1f3",
+        "f8e7",
+        "g2g3",
+        "e8g8",
+        "f1g2",
+    ],
+    grunfeld: ["d2d4", "g8f6", "c2c4", "g7g6", "b1c3", "d7d5", "c4d5", "f6d5", "e2e4", "d5c3"],
     english: [
         "c2c4",
         "e7e5",
@@ -347,82 +419,175 @@ const OPENING_LINES = {
 
 type OpeningLineId = keyof typeof OPENING_LINES;
 
-function openingLine(id: OpeningLineId, weight: number): HumanBotOpeningLine {
-    return { id, moves: OPENING_LINES[id], weight };
+function openingLine(
+    id: OpeningLineId,
+    weight: number,
+    side: HumanBotOpeningLineSide = "both",
+): HumanBotOpeningLine {
+    return { id, moves: OPENING_LINES[id], weight, side };
 }
 
 export const HUMAN_BOT_REPERTOIRES = [
     {
-        id: "luna-variety",
+        id: "luna-e4-explorer",
+        version: HUMAN_BOT_REPERTOIRE_SCHEMA_VERSION,
+        mode: "weighted",
         maxPly: 12,
         lines: [
-            openingLine("italian", 5),
-            openingLine("twoKnights", 5),
-            openingLine("scotch", 4),
-            openingLine("ruyLopez", 2),
-            openingLine("sicilian", 2),
-            openingLine("london", 2),
+            openingLine("italian", 4, "white"),
+            openingLine("scotch", 3, "white"),
+            openingLine("french", 2, "black"),
+            openingLine("scandinavian", 1, "black"),
         ],
     },
     {
-        id: "nico-open-games",
+        id: "nico-sicilian-attack",
+        version: HUMAN_BOT_REPERTOIRE_SCHEMA_VERSION,
+        mode: "weighted",
         maxPly: 14,
         lines: [
-            openingLine("italian", 4),
-            openingLine("twoKnights", 4),
-            openingLine("scotch", 4),
-            openingLine("ruyLopez", 3),
-            openingLine("sicilian", 3),
-            openingLine("caroKann", 2),
-            openingLine("queensGambit", 1),
+            openingLine("italian", 4, "white"),
+            openingLine("twoKnights", 4, "white"),
+            openingLine("sicilianEnglishAttack", 5, "black"),
         ],
     },
     {
-        id: "vera-classical-mix",
+        id: "vera-classical-choices",
+        version: HUMAN_BOT_REPERTOIRE_SCHEMA_VERSION,
+        mode: "weighted",
         maxPly: 14,
         lines: [
-            openingLine("italian", 3),
-            openingLine("ruyLopez", 4),
-            openingLine("queensGambit", 4),
-            openingLine("slav", 3),
-            openingLine("english", 2),
-            openingLine("caroKann", 2),
+            openingLine("queensGambit", 4, "white"),
+            openingLine("london", 3, "white"),
+            openingLine("slav", 4, "black"),
         ],
     },
     {
-        id: "marcos-queen-pawn",
+        id: "gabriel-queen-pawn",
+        version: HUMAN_BOT_REPERTOIRE_SCHEMA_VERSION,
+        mode: "weighted",
         maxPly: 16,
         lines: [
-            openingLine("queensGambit", 5),
-            openingLine("slav", 4),
-            openingLine("nimzoIndian", 4),
-            openingLine("queensIndian", 3),
-            openingLine("london", 2),
-            openingLine("ruyLopez", 2),
+            openingLine("queensGambit", 4, "white"),
+            openingLine("london", 4, "white"),
+            openingLine("slav", 4, "black"),
+            openingLine("queensIndian", 3, "black"),
         ],
     },
     {
         id: "irene-solid-classical",
+        version: HUMAN_BOT_REPERTOIRE_SCHEMA_VERSION,
+        mode: "weighted",
         maxPly: 16,
         lines: [
-            openingLine("queensGambit", 4),
-            openingLine("nimzoIndian", 4),
-            openingLine("caroKann", 4),
-            openingLine("french", 3),
-            openingLine("ruyLopez", 3),
-            openingLine("kingsIndian", 2),
+            openingLine("queensGambit", 4, "white"),
+            openingLine("english", 2, "white"),
+            openingLine("caroKann", 5, "black"),
         ],
     },
     {
         id: "leo-flexible-mainlines",
+        version: HUMAN_BOT_REPERTOIRE_SCHEMA_VERSION,
+        mode: "weighted",
         maxPly: 16,
         lines: [
-            openingLine("ruyLopez", 4),
-            openingLine("sicilian", 5),
-            openingLine("nimzoIndian", 4),
-            openingLine("kingsIndian", 3),
-            openingLine("english", 3),
-            openingLine("reti", 2),
+            openingLine("ruyLopez", 4, "white"),
+            openingLine("english", 2, "white"),
+            openingLine("sicilian", 4, "black"),
+            openingLine("nimzoIndian", 4, "black"),
+            openingLine("kingsIndian", 3, "black"),
+        ],
+    },
+    {
+        id: "sofia-fixed-starter",
+        version: HUMAN_BOT_REPERTOIRE_SCHEMA_VERSION,
+        mode: "forcedLine",
+        maxPly: 6,
+        lines: [openingLine("scandinavian", 1)],
+    },
+    {
+        id: "daniela-french",
+        version: HUMAN_BOT_REPERTOIRE_SCHEMA_VERSION,
+        mode: "weighted",
+        maxPly: 14,
+        lines: [openingLine("scotch", 3, "white"), openingLine("french", 5, "black")],
+    },
+    {
+        id: "marcos-maia-natural",
+        version: HUMAN_BOT_REPERTOIRE_SCHEMA_VERSION,
+        mode: "none",
+        maxPly: 0,
+        lines: [],
+    },
+    {
+        id: "carlos-london-english",
+        version: HUMAN_BOT_REPERTOIRE_SCHEMA_VERSION,
+        mode: "weighted",
+        maxPly: 16,
+        lines: [
+            openingLine("london", 5, "white"),
+            openingLine("english", 3, "white"),
+            openingLine("slav", 4, "black"),
+            openingLine("queensIndian", 2, "black"),
+        ],
+    },
+    {
+        id: "nelson-indian-defenses",
+        version: HUMAN_BOT_REPERTOIRE_SCHEMA_VERSION,
+        mode: "weighted",
+        maxPly: 16,
+        lines: [
+            openingLine("queensGambit", 3, "white"),
+            openingLine("nimzoIndian", 4, "black"),
+            openingLine("queensIndian", 3, "black"),
+            openingLine("kingsIndian", 3, "black"),
+            openingLine("grunfeld", 2, "black"),
+        ],
+    },
+    {
+        id: "mariann-classical-defenses",
+        version: HUMAN_BOT_REPERTOIRE_SCHEMA_VERSION,
+        mode: "weighted",
+        maxPly: 16,
+        lines: [
+            openingLine("ruyLopez", 3, "white"),
+            openingLine("queensGambit", 3, "white"),
+            openingLine("french", 4, "black"),
+            openingLine("caroKann", 4, "black"),
+        ],
+    },
+    {
+        id: "valeria-pirc-modern",
+        version: HUMAN_BOT_REPERTOIRE_SCHEMA_VERSION,
+        mode: "weighted",
+        maxPly: 14,
+        lines: [
+            openingLine("italian", 3, "white"),
+            openingLine("pirc", 4, "black"),
+            openingLine("modern", 3, "black"),
+        ],
+    },
+    {
+        id: "tomas-kings-indian",
+        version: HUMAN_BOT_REPERTOIRE_SCHEMA_VERSION,
+        mode: "weighted",
+        maxPly: 16,
+        lines: [
+            openingLine("kingsIndianAttack", 5, "white"),
+            openingLine("kingsIndian", 5, "black"),
+        ],
+    },
+    {
+        id: "atlas-mainline",
+        version: HUMAN_BOT_REPERTOIRE_SCHEMA_VERSION,
+        mode: "weighted",
+        maxPly: 18,
+        lines: [
+            openingLine("ruyLopez", 5, "white"),
+            openingLine("scotch", 2, "white"),
+            openingLine("sicilian", 5, "black"),
+            openingLine("nimzoIndian", 4, "black"),
+            openingLine("grunfeld", 3, "black"),
         ],
     },
 ] as const satisfies readonly HumanBotRepertoire[];
@@ -436,58 +601,194 @@ const HUMAN_BOT_PROFILE_DEFINITIONS = [
     {
         id: "luna",
         name: "Luna",
+        profileVersion: HUMAN_BOT_PROFILE_VERSION,
         levelId: "novice-900",
         samplingStyleId: "adventurous-wide",
         timingId: "casual-fast",
-        repertoireId: "luna-variety",
+        repertoireId: "luna-e4-explorer",
+        decisionStyle: { aggression: "high", complexity: "high" },
+        openingStyle: { sharpness: "medium", theory: "low" },
+        styleEvidence: "editorial",
+    },
+    {
+        id: "daniela",
+        name: "Daniela",
+        profileVersion: HUMAN_BOT_PROFILE_VERSION,
+        levelId: "developing-1300",
+        samplingStyleId: "adventurous",
+        timingId: "casual",
+        repertoireId: "daniela-french",
+        decisionStyle: { aggression: "medium", complexity: "high" },
+        openingStyle: { sharpness: "medium", theory: "medium" },
+        styleEvidence: "editorial",
     },
     {
         id: "nico",
         name: "Nico",
+        profileVersion: HUMAN_BOT_PROFILE_VERSION,
         levelId: "developing-1200",
         samplingStyleId: "adventurous",
         timingId: "casual",
-        repertoireId: "nico-open-games",
+        repertoireId: "nico-sicilian-attack",
+        decisionStyle: { aggression: "high", complexity: "high" },
+        openingStyle: { sharpness: "high", theory: "low" },
+        styleEvidence: "editorial",
+    },
+    {
+        id: "sofia",
+        name: "Sofía",
+        profileVersion: HUMAN_BOT_PROFILE_VERSION,
+        levelId: "novice-1050",
+        samplingStyleId: "adventurous-wide",
+        timingId: "casual",
+        repertoireId: "sofia-fixed-starter",
+        decisionStyle: { aggression: "high", complexity: "medium" },
+        openingStyle: { sharpness: "medium", theory: "low" },
+        styleEvidence: "editorial",
+    },
+    {
+        id: "gabriel",
+        name: "Gabriel",
+        profileVersion: HUMAN_BOT_PROFILE_VERSION,
+        levelId: "club-1700",
+        samplingStyleId: "balanced-selective",
+        timingId: "deliberate",
+        repertoireId: "gabriel-queen-pawn",
+        decisionStyle: { aggression: "low", complexity: "low" },
+        openingStyle: { sharpness: "low", theory: "medium" },
+        styleEvidence: "editorial",
     },
     {
         id: "vera",
         name: "Vera",
+        profileVersion: HUMAN_BOT_PROFILE_VERSION,
         levelId: "club-1500",
         samplingStyleId: "balanced",
         timingId: "steady",
-        repertoireId: "vera-classical-mix",
+        repertoireId: "vera-classical-choices",
+        decisionStyle: { aggression: "medium", complexity: "medium" },
+        openingStyle: { sharpness: "medium", theory: "medium" },
+        styleEvidence: "editorial",
+    },
+    {
+        id: "carlos",
+        name: "Carlos",
+        profileVersion: HUMAN_BOT_PROFILE_VERSION,
+        levelId: "club-1650",
+        samplingStyleId: "balanced-selective",
+        timingId: "deliberate",
+        repertoireId: "carlos-london-english",
+        decisionStyle: { aggression: "medium", complexity: "high" },
+        openingStyle: { sharpness: "medium", theory: "high" },
+        styleEvidence: "editorial",
     },
     {
         id: "marcos",
         name: "Marcos",
-        levelId: "club-1700",
+        profileVersion: HUMAN_BOT_PROFILE_VERSION,
+        levelId: "club-1450",
+        samplingStyleId: "balanced",
+        timingId: "steady",
+        repertoireId: "marcos-maia-natural",
+        decisionStyle: { aggression: "medium", complexity: "medium" },
+        openingStyle: { sharpness: "medium", theory: "low" },
+        styleEvidence: "editorial",
+    },
+    {
+        id: "nelson",
+        name: "Nelson",
+        profileVersion: HUMAN_BOT_PROFILE_VERSION,
+        levelId: "club-1800",
         samplingStyleId: "balanced-selective",
         timingId: "deliberate",
-        repertoireId: "marcos-queen-pawn",
+        repertoireId: "nelson-indian-defenses",
+        decisionStyle: { aggression: "high", complexity: "high" },
+        openingStyle: { sharpness: "high", theory: "high" },
+        styleEvidence: "editorial",
     },
     {
         id: "irene",
         name: "Irene",
+        profileVersion: HUMAN_BOT_PROFILE_VERSION,
         levelId: "expert-1900",
         samplingStyleId: "focused",
         timingId: "patient",
         repertoireId: "irene-solid-classical",
+        decisionStyle: { aggression: "low", complexity: "low" },
+        openingStyle: { sharpness: "low", theory: "high" },
+        styleEvidence: "editorial",
+    },
+    {
+        id: "mariann",
+        name: "Mariann",
+        profileVersion: HUMAN_BOT_PROFILE_VERSION,
+        levelId: "expert-2000",
+        samplingStyleId: "focused",
+        timingId: "patient",
+        repertoireId: "mariann-classical-defenses",
+        decisionStyle: { aggression: "low", complexity: "medium" },
+        openingStyle: { sharpness: "low", theory: "high" },
+        styleEvidence: "editorial",
+    },
+    {
+        id: "valeria",
+        name: "Valeria",
+        profileVersion: HUMAN_BOT_PROFILE_VERSION,
+        levelId: "expert-2100",
+        samplingStyleId: "focused",
+        timingId: "patient",
+        repertoireId: "valeria-pirc-modern",
+        decisionStyle: { aggression: "high", complexity: "high" },
+        openingStyle: { sharpness: "high", theory: "medium" },
+        styleEvidence: "editorial",
     },
     {
         id: "leo",
         name: "Leo",
+        profileVersion: HUMAN_BOT_PROFILE_VERSION,
         levelId: "advanced-2200",
         samplingStyleId: "focused-narrow",
         timingId: "deep",
         repertoireId: "leo-flexible-mainlines",
+        decisionStyle: { aggression: "medium", complexity: "medium" },
+        openingStyle: { sharpness: "medium", theory: "high" },
+        styleEvidence: "editorial",
+    },
+    {
+        id: "tomas",
+        name: "Tomás",
+        profileVersion: HUMAN_BOT_PROFILE_VERSION,
+        levelId: "advanced-2300",
+        samplingStyleId: "focused-narrow",
+        timingId: "deep",
+        repertoireId: "tomas-kings-indian",
+        decisionStyle: { aggression: "medium", complexity: "high" },
+        openingStyle: { sharpness: "medium", theory: "high" },
+        styleEvidence: "editorial",
+    },
+    {
+        id: "atlas",
+        name: "Atlas",
+        profileVersion: HUMAN_BOT_PROFILE_VERSION,
+        levelId: "master-2400",
+        samplingStyleId: "focused-narrow",
+        timingId: "deep",
+        repertoireId: "atlas-mainline",
+        decisionStyle: { aggression: "medium", complexity: "medium" },
+        openingStyle: { sharpness: "high", theory: "high" },
+        styleEvidence: "editorial",
     },
 ] as const satisfies readonly {
     id: string;
     name: string;
+    profileVersion: number;
     levelId: HumanBotLevelId;
     samplingStyleId: HumanBotSamplingStyleId;
     timingId: HumanBotTimingId;
     repertoireId: HumanBotRepertoireId;
+    decisionStyle: HumanBotDecisionStyle | null;
+    openingStyle: HumanBotOpeningStyle | null;
+    styleEvidence: HumanBotStyleEvidence;
 }[];
 
 export type HumanBotProfileId = (typeof HUMAN_BOT_PROFILE_DEFINITIONS)[number]["id"];
@@ -515,8 +816,9 @@ function resolveHumanBotProfile(
     };
 }
 
-export const HUMAN_BOT_PROFILES: readonly HumanBotProfile[] =
-    HUMAN_BOT_PROFILE_DEFINITIONS.map(resolveHumanBotProfile);
+export const HUMAN_BOT_PROFILES: readonly HumanBotProfile[] = HUMAN_BOT_PROFILE_DEFINITIONS.map(
+    resolveHumanBotProfile,
+).sort((left, right) => left.elo - right.elo);
 
 export const DEFAULT_HUMAN_BOT_PROFILE_ID: HumanBotProfileId = "vera";
 
@@ -563,10 +865,13 @@ export function buildHumanBotOpeningRepertoire(
 ): HumanBotOpeningRepertoireConfig {
     return {
         id: profile.repertoire.id,
+        version: profile.repertoire.version,
+        mode: profile.repertoire.mode,
         maxPly: profile.repertoire.maxPly,
         lines: profile.repertoire.lines.map((line) => ({
             moves: [...line.moves],
             weight: line.weight,
+            side: line.side,
         })),
     };
 }
@@ -584,14 +889,26 @@ export function buildHumanBotTraceHeaders(
     profile: HumanBotProfile,
     color: "White" | "Black",
     humanTiming = true,
+    modelVersion = "",
 ): Record<string, string> {
     return {
         [`${color}BotProfile`]: profile.id,
+        [`${color}BotProfileVersion`]: profile.profileVersion.toString(),
+        [`${color}BotCatalogVersion`]: HUMAN_BOT_CATALOG_VERSION,
         [`${color}BotLevel`]: profile.levelId,
         [`${color}BotStyle`]: profile.style,
+        [`${color}BotStyleEvidence`]: profile.styleEvidence,
+        [`${color}BotAggression`]: profile.decisionStyle?.aggression ?? "unclassified",
+        [`${color}BotComplexity`]: profile.decisionStyle?.complexity ?? "unclassified",
+        [`${color}BotOpeningSharpness`]: profile.openingStyle?.sharpness ?? "unclassified",
+        [`${color}BotOpeningTheory`]: profile.openingStyle?.theory ?? "unclassified",
         [`${color}BotSampling`]: profile.samplingStyleId,
         [`${color}BotTiming`]: humanTiming ? profile.timingId : "disabled",
         [`${color}BotRepertoire`]: profile.repertoireId,
+        [`${color}BotRepertoireVersion`]: profile.repertoire.version.toString(),
+        [`${color}BotRepertoireMode`]: profile.repertoire.mode,
+        [`${color}BotModel`]: HUMAN_BOT_MODEL_ID,
+        [`${color}BotModelVersion`]: modelVersion || "unknown",
         [`${color}BotTemperature`]: profile.temperature.toString(),
         [`${color}BotTopP`]: profile.topP.toString(),
     };

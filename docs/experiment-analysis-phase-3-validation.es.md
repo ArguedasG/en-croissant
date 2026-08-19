@@ -1,5 +1,10 @@
 # Validación de Experiment Analysis — Fase 3
 
+**Estado: Cerrada para su alcance básico el 18 de agosto de 2026.**
+
+Las entregas 3.1, 3.2 y 3.3 están implementadas y validadas con experimentos reales. La
+calibración estadística profunda queda deliberadamente fuera de este cierre y pasa a la Fase 4.
+
 ## Propósito
 
 Esta validación comprueba tres cosas distintas:
@@ -101,4 +106,3 @@ La fase 3 queda validada para su alcance básico porque:
 La calibración estadística profunda —por ejemplo, 50–100 o más partidas por condición y muchas
 posiciones— queda como trabajo posterior. No es necesaria para cerrar esta primera versión de la
 fase 3.
-

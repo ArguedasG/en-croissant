@@ -42,7 +42,7 @@ import {
   MAIA_ELO_MIN,
   type HumanBotProfileId,
   type HumanBotRepertoireId,
-  type HumanBotStyle,
+  type HumanBotStyleAxisLevel,
   isMaiaEngine,
 } from "@/utils/humanBots";
 import { EnginesSelect } from "./EnginesSelect";
@@ -92,6 +92,7 @@ export function OpponentForm({
   setOtherOpponent,
   allowedTypes = ["human", "engine", "humanBot"],
   showSeed = false,
+  humanTimingEnabled = true,
 }: {
   sameTimeControl: boolean;
   opponent: OpponentSettings;
@@ -99,6 +100,7 @@ export function OpponentForm({
   setOtherOpponent: React.Dispatch<React.SetStateAction<OpponentSettings>>;
   allowedTypes?: OpponentType[];
   showSeed?: boolean;
+  humanTimingEnabled?: boolean;
 }) {
   const { t } = useTranslation();
   const [eloDraft, setEloDraft] = useState<string | null>(null);
@@ -210,48 +212,99 @@ export function OpponentForm({
     }
   }
 
-  function getStyleLabel(style: HumanBotStyle): string {
-    if (style === "adventurous") return t("HumanBots.Style.Adventurous", "Adventurous");
-    if (style === "focused") return t("HumanBots.Style.Focused", "Focused");
-    return t("HumanBots.Style.Balanced", "Balanced");
+  function getAxisLabel(
+    axis: "aggression" | "complexity" | "sharpness" | "theory",
+    level: HumanBotStyleAxisLevel,
+  ): string {
+    const labels = {
+      aggression: {
+        low: t("HumanBots.Style.Aggression.Low", "Defensive"),
+        medium: t("HumanBots.Style.Aggression.Medium", "Balanced"),
+        high: t("HumanBots.Style.Aggression.High", "Aggressive"),
+      },
+      complexity: {
+        low: t("HumanBots.Style.Complexity.Low", "Simplifying"),
+        medium: t("HumanBots.Style.Complexity.Medium", "Balanced"),
+        high: t("HumanBots.Style.Complexity.High", "Complicating"),
+      },
+      sharpness: {
+        low: t("HumanBots.Style.Sharpness.Low", "Solid"),
+        medium: t("HumanBots.Style.Sharpness.Medium", "Balanced"),
+        high: t("HumanBots.Style.Sharpness.High", "Sharp"),
+      },
+      theory: {
+        low: t("HumanBots.Style.Theory.Low", "Less theoretical"),
+        medium: t("HumanBots.Style.Theory.Medium", "Balanced theory"),
+        high: t("HumanBots.Style.Theory.High", "Theoretical"),
+      },
+    };
+    return labels[axis][level];
   }
 
-  function getStyleDescription(style: HumanBotStyle): string {
-    if (style === "adventurous") {
+  function getEditorialStyleLabel(): string {
+    const { decisionStyle, openingStyle } = humanBotProfile;
+    if (!decisionStyle || !openingStyle) {
+      return t("HumanBots.Style.Unclassified", "Unclassified style");
+    }
+    return `${getAxisLabel("aggression", decisionStyle.aggression)} · ${getAxisLabel("complexity", decisionStyle.complexity)}`;
+  }
+
+  function getEditorialStyleDescription(): string {
+    const { decisionStyle, openingStyle } = humanBotProfile;
+    if (!decisionStyle || !openingStyle) {
       return t(
-        "HumanBots.Style.Adventurous.Desc",
-        "Allows a wider variety of plausible human moves.",
+        "HumanBots.Style.Unclassified.Desc",
+        "This profile does not have an editorial style classification yet.",
       );
     }
-    if (style === "focused") {
-      return t(
-        "HumanBots.Style.Focused.Desc",
-        "Concentrates its choices on the most likely human moves.",
-      );
-    }
-    return t(
-      "HumanBots.Style.Balanced.Desc",
-      "Balances move variety with preference for common human choices.",
-    );
+    return t("HumanBots.Style.Editorial.Desc", {
+      defaultValue:
+        "Editorial hypothesis: {{aggression}} decisions, {{complexity}} positions, {{sharpness}} openings and {{theory}} theory.",
+      aggression: getAxisLabel("aggression", decisionStyle.aggression),
+      complexity: getAxisLabel("complexity", decisionStyle.complexity),
+      sharpness: getAxisLabel("sharpness", openingStyle.sharpness),
+      theory: getAxisLabel("theory", openingStyle.theory),
+    });
   }
 
   function getRepertoireLabel(repertoireId: HumanBotRepertoireId): string {
-    if (repertoireId === "luna-variety") {
-      return t("HumanBots.Repertoire.Luna", "Early variety");
+    const labels: Record<HumanBotRepertoireId, string> = {
+      "luna-e4-explorer": t("HumanBots.Repertoire.Luna", "E4 explorer"),
+      "sofia-fixed-starter": t("HumanBots.Repertoire.Sofia", "Fixed three-move starter"),
+      "nico-sicilian-attack": t("HumanBots.Repertoire.Nico", "Sicilian attack"),
+      "daniela-french": t("HumanBots.Repertoire.Daniela", "French specialist"),
+      "marcos-maia-natural": t("HumanBots.Repertoire.Marcos", "Maia natural; no repertoire"),
+      "vera-classical-choices": t("HumanBots.Repertoire.Vera", "Classical choices"),
+      "carlos-london-english": t("HumanBots.Repertoire.Carlos", "London and English"),
+      "gabriel-queen-pawn": t("HumanBots.Repertoire.Gabriel", "Queen's pawn"),
+      "nelson-indian-defenses": t("HumanBots.Repertoire.Nelson", "Indian defenses"),
+      "irene-solid-classical": t("HumanBots.Repertoire.Irene", "Solid classical"),
+      "mariann-classical-defenses": t("HumanBots.Repertoire.Mariann", "Classical defenses"),
+      "valeria-pirc-modern": t("HumanBots.Repertoire.Valeria", "Pirc and Modern"),
+      "leo-flexible-mainlines": t("HumanBots.Repertoire.Leo", "Flexible main lines"),
+      "tomas-kings-indian": t("HumanBots.Repertoire.Tomas", "King's Indian systems"),
+      "atlas-mainline": t("HumanBots.Repertoire.Atlas", "Grandmaster main lines"),
+    };
+    return labels[repertoireId];
+  }
+
+  function getRepertoireDescription(): string {
+    if (humanBotProfile.repertoire.mode === "none") {
+      return t(
+        "HumanBots.Repertoire.None.Desc",
+        "This bot has no profile opening repertoire; Maia's normal selection drives its openings.",
+      );
     }
-    if (repertoireId === "nico-open-games") {
-      return t("HumanBots.Repertoire.Nico", "Open games");
+    if (humanBotProfile.repertoire.mode === "forcedLine") {
+      return t(
+        "HumanBots.Repertoire.ForcedLine.Desc",
+        "Follows one initial opening line for three full moves, then Maia improvises normally.",
+      );
     }
-    if (repertoireId === "vera-classical-mix") {
-      return t("HumanBots.Repertoire.Vera", "Classical mix");
-    }
-    if (repertoireId === "marcos-queen-pawn") {
-      return t("HumanBots.Repertoire.Marcos", "Queen's pawn");
-    }
-    if (repertoireId === "irene-solid-classical") {
-      return t("HumanBots.Repertoire.Irene", "Solid classical");
-    }
-    return t("HumanBots.Repertoire.Leo", "Flexible main lines");
+    return t(
+      "HumanBots.Repertoire.Desc",
+      "The bot follows weighted preferences while the game remains in its repertoire, then Maia chooses normally.",
+    );
   }
 
   return (
@@ -481,9 +534,9 @@ export function OpponentForm({
                 <Badge variant="light">{humanBotProfile.elo} ELO</Badge>
               </Group>
               <Badge variant="outline" w="fit-content">
-                {getStyleLabel(humanBotProfile.style)}
+                {getEditorialStyleLabel()}
               </Badge>
-              <Text size="sm">{getStyleDescription(humanBotProfile.style)}</Text>
+              <Text size="sm">{getEditorialStyleDescription()}</Text>
               <Divider />
               <Group justify="space-between" align="flex-start" wrap="nowrap">
                 <Text size="xs" c="dimmed">
@@ -494,10 +547,7 @@ export function OpponentForm({
                 </Text>
               </Group>
               <Text size="xs" c="dimmed">
-                {t(
-                  "HumanBots.Repertoire.Desc",
-                  "The bot follows weighted preferences while the game remains in its repertoire, then Maia chooses normally.",
-                )}
+                {getRepertoireDescription()}
               </Text>
               <Text size="xs" c="dimmed">
                 {t(
@@ -508,21 +558,23 @@ export function OpponentForm({
             </Stack>
           </Paper>
 
-          <Switch
-            checked={opponent.humanTiming ?? true}
-            label={t("HumanBots.Timing", "Human thinking time")}
-            description={t(
-              "HumanBots.Timing.Desc",
-              "Adds variable, clock-aware pauses and records the observed decision time.",
-            )}
-            onChange={(event) =>
-              setOpponent((prev) =>
-                prev.type === "humanBot"
-                  ? { ...prev, humanTiming: event.currentTarget.checked }
-                  : prev,
-              )
-            }
-          />
+          {humanTimingEnabled && (
+            <Switch
+              checked={opponent.humanTiming ?? true}
+              label={t("HumanBots.Timing", "Human thinking time")}
+              description={t(
+                "HumanBots.Timing.Desc",
+                "Adds variable, clock-aware pauses and records the observed decision time.",
+              )}
+              onChange={(event) =>
+                setOpponent((prev) =>
+                  prev.type === "humanBot"
+                    ? { ...prev, humanTiming: event.currentTarget.checked }
+                    : prev,
+                )
+              }
+            />
+          )}
         </Stack>
       )}
 

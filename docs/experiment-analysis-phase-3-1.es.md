@@ -23,14 +23,18 @@ del motor cuando los ajustes están sincronizados.
 El valor sigue siendo un objetivo solicitado al modelo. No debe interpretarse como una fuerza
 calibrada de Chess Lab.
 
-## Validación manual pendiente
+## Validación manual realizada
 
-1. Registrar una instalación Maia 3 y una instalación Stockfish.
-2. Abrir una posición no terminal desde una partida o FEN.
-3. Activar ambos motores y confirmar que Maia muestra W/D/L y Stockfish muestra Eval.
-4. Cambiar el ELO de Maia y confirmar que se envía `setoption name Elo value ...` en los logs.
-5. Comprobar que desactivar un motor detiene su búsqueda sin afectar al otro.
-6. Confirmar que el panel no llama a simulaciones ni crea artefactos de experimentos.
+La validación manual se completó con una instalación local de Maia 3 y una instalación de
+Stockfish. Se confirmó el flujo dual, el control de ELO, la detención independiente de motores y
+la ausencia de simulaciones o artefactos adicionales al analizar una posición.
+
+- [x] Registrar una instalación Maia 3 y una instalación Stockfish.
+- [x] Abrir una posición no terminal desde una partida o FEN.
+- [x] Activar ambos motores y confirmar que Maia muestra W/D/L y Stockfish muestra Eval.
+- [x] Cambiar el ELO de Maia y confirmar que se envía `setoption name Elo value ...` en los logs.
+- [x] Comprobar que desactivar un motor detiene su búsqueda sin afectar al otro.
+- [x] Confirmar que el panel no llama a simulaciones ni crea artefactos de experimentos.
 
 ## Fuera de alcance
 

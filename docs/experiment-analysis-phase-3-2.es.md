@@ -57,11 +57,16 @@ material/ausencia de damas). No se presentan ELO calibrado, causalidad, posicion
 distribuciones de jugadas, entropía ni intervalos de confianza. Esas funciones requieren una
 entrega estadística posterior y muestras diseñadas específicamente para ese fin.
 
-## Validación manual pendiente
+## Validación manual realizada
 
-1. Generar o abrir un experimento completado con al menos una partida y un motor local instalado.
-2. Abrir el historial y ejecutar el análisis con un límite de tiempo pequeño.
-3. Confirmar progreso, cancelación y que el historial recupera el resultado guardado.
-4. Repetir con colores alternados y revisar que ACPL, errores y blunders aparecen por color y jugador.
-5. Comparar el resultado con una revisión directa de algunas jugadas en el panel normal de análisis.
-6. Confirmar que un motor Maia no aparece como opción de evaluación objetiva.
+La validación manual se completó con experimentos reales persistidos por el Model Game Generator.
+Se revisaron progreso, cancelación, recuperación del análisis guardado, colores alternados,
+métricas por jugador y fase, comparación puntual con el análisis normal y exclusión de Maia como
+evaluador objetivo.
+
+- [x] Generar o abrir un experimento completado con al menos una partida y un motor local instalado.
+- [x] Abrir el historial y ejecutar el análisis con un límite de tiempo pequeño.
+- [x] Confirmar progreso, cancelación y que el historial recupera el resultado guardado.
+- [x] Repetir con colores alternados y revisar que ACPL, errores y blunders aparecen por color y jugador.
+- [x] Comparar el resultado con una revisión directa de algunas jugadas en el panel normal de análisis.
+- [x] Confirmar que un motor Maia no aparece como opción de evaluación objetiva.

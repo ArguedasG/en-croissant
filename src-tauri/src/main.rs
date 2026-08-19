@@ -3,6 +3,7 @@
     windows_subsystem = "windows"
 )]
 
+mod bot_league;
 mod chess;
 mod db;
 mod engine;
@@ -23,6 +24,7 @@ mod sound;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
+use bot_league::BotLeagueManager;
 use chess::{BestMovesPayload, EngineProcess};
 use dashmap::DashMap;
 use db::{DatabaseProgress, GameQuery, NormalizedGame, PositionStats};
@@ -47,6 +49,11 @@ use sysinfo::SystemExt;
 use tauri::{Manager, Window};
 use tauri_plugin_log::{Target, TargetKind};
 
+use crate::bot_league::{
+    cancel_bot_league, cancel_bot_leagues_for_owner, delete_bot_league, dismiss_bot_league,
+    export_bot_league, get_bot_league, get_bot_league_detail, list_bot_leagues, pause_bot_league,
+    read_bot_league_game, resume_bot_league, start_bot_league, BotLeagueEvent,
+};
 use crate::chess::{
     analyze_game, cancel_analysis, get_engine_config, get_engine_logs, kill_engine, kill_engines,
     stop_engine,
@@ -56,6 +63,7 @@ use crate::db::{
     delete_indexes, export_to_pgn, get_player, get_players_game_info, get_tournaments,
     preload_reference_db, search_position, MmapSearchIndex,
 };
+use crate::fs::set_file_as_executable;
 use crate::game::{
     abort_game, get_game_engine_logs, get_game_manifest, get_game_state, make_game_move,
     resign_game, start_game, take_back_game_move, ClockUpdateEvent, GameMoveEvent, GameOverEvent,
@@ -65,8 +73,6 @@ use crate::model_game_batch::{
     get_model_game_batch, pause_model_game_batch, resume_model_game_batch, start_model_game_batch,
     ModelGameBatchEvent,
 };
-
-use crate::fs::set_file_as_executable;
 use crate::lexer::lex_pgn;
 use crate::oauth::authenticate;
 use crate::pgn::{count_pgn_games, delete_game, read_games, write_game};
@@ -109,6 +115,7 @@ pub struct AppState {
     auth: AuthState,
     game_manager: Arc<GameManager>,
     model_game_batch_manager: ModelGameBatchManager,
+    bot_league_manager: BotLeagueManager,
     progress_state: ProgressStore,
 }
 
@@ -190,6 +197,18 @@ fn main() {
             cancel_model_game_batch,
             cancel_model_game_batches_for_owner,
             dismiss_model_game_batch,
+            start_bot_league,
+            get_bot_league,
+            pause_bot_league,
+            resume_bot_league,
+            cancel_bot_league,
+            cancel_bot_leagues_for_owner,
+            dismiss_bot_league,
+            list_bot_leagues,
+            get_bot_league_detail,
+            read_bot_league_game,
+            delete_bot_league,
+            export_bot_league,
             list_model_game_experiments,
             get_model_game_experiment,
             analyze_model_game_experiment,
@@ -214,7 +233,8 @@ fn main() {
             GameMoveEvent,
             ClockUpdateEvent,
             GameOverEvent,
-            ModelGameBatchEvent
+            ModelGameBatchEvent,
+            BotLeagueEvent
         ));
 
     #[cfg(debug_assertions)]
@@ -258,6 +278,9 @@ fn main() {
             {
                 log::warn!("Could not recover interrupted model game experiments: {error}");
             }
+            if let Err(error) = bot_league::recover_interrupted_bot_leagues(app.handle()) {
+                log::warn!("Could not recover interrupted bot leagues: {error}");
+            }
 
             // #[cfg(any(windows, target_os = "macos"))]
             // set_shadow(&app.get_webview_window("main").unwrap(), true).unwrap();
@@ -299,6 +322,7 @@ fn main() {
                     }
                 }
                 state.model_game_batch_manager.cancel_all_sync();
+                state.bot_league_manager.cancel_all_sync();
                 state.game_manager.kill_all_sync();
             }
         });

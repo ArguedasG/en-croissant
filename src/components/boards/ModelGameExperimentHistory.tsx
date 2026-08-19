@@ -63,6 +63,31 @@ function resultLabel(result: ModelGameExperimentDetail["games"][number]["result"
   return "½-½";
 }
 
+function experimentScore(
+  summary: ModelGameExperimentSummary,
+  games: ModelGameExperimentDetail["games"],
+) {
+  let firstPlayerWins = 0;
+  let secondPlayerWins = 0;
+  let draws = 0;
+
+  for (const game of games) {
+    if (!game.result) continue;
+    if (game.result.type === "draw") {
+      draws += 1;
+      continue;
+    }
+
+    const whiteWon = game.result.type === "whiteWins";
+    const firstPlayerWasWhite = game.whitePlayer === summary.whitePlayer;
+    const firstPlayerWon = whiteWon === firstPlayerWasWhite;
+    if (firstPlayerWon) firstPlayerWins += 1;
+    else secondPlayerWins += 1;
+  }
+
+  return { firstPlayerWins, secondPlayerWins, draws };
+}
+
 export default function ModelGameExperimentHistory({
   requestedExperimentId,
   showPanel = true,
@@ -219,6 +244,7 @@ export default function ModelGameExperimentHistory({
   const totalPages = Math.max(1, Math.ceil(summaries.length / pageSize));
   const safePage = Math.min(page, totalPages);
   const visibleSummaries = summaries.slice((safePage - 1) * pageSize, safePage * pageSize);
+  const detailScore = detail ? experimentScore(detail.summary, detail.games) : null;
 
   return (
     <>
@@ -272,6 +298,24 @@ export default function ModelGameExperimentHistory({
       >
         {detail ? (
           <Stack>
+            {detailScore && (
+              <Paper withBorder p="sm">
+                <Group justify="space-between" align="flex-start">
+                  <div>
+                    <Text fw={600}>
+                      {detail.summary.whitePlayer} {detailScore.firstPlayerWins} –{" "}
+                      {detailScore.secondPlayerWins} {detail.summary.blackPlayer}
+                    </Text>
+                    <Text size="xs" c="dimmed">
+                      {detailScore.draws} {t("ModelGame.Experiments.Draws", "draws")} ·{" "}
+                      {detail.summary.recordedGames}/{detail.summary.totalGames}{" "}
+                      {t("Common.Games", "games")}
+                    </Text>
+                  </div>
+                  <Badge variant="light">{t("ModelGame.Experiments.Score", "Score")}</Badge>
+                </Group>
+              </Paper>
+            )}
             <Group justify="space-between">
               <Button
                 variant="subtle"

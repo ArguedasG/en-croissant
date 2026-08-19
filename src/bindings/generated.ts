@@ -502,6 +502,102 @@ async dismissModelGameBatch(batchId: string) : Promise<Result<null, string>> {
     else return { status: "error", error: e  as any };
 }
 },
+async startBotLeague(leagueId: string, config: BotLeagueConfig) : Promise<Result<BotLeagueState, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("start_bot_league", { leagueId, config }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async getBotLeague(leagueId: string) : Promise<Result<BotLeagueState, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_bot_league", { leagueId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async pauseBotLeague(leagueId: string) : Promise<Result<BotLeagueState, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("pause_bot_league", { leagueId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async resumeBotLeague(leagueId: string) : Promise<Result<BotLeagueState, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("resume_bot_league", { leagueId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async cancelBotLeague(leagueId: string) : Promise<Result<BotLeagueState, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("cancel_bot_league", { leagueId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async cancelBotLeaguesForOwner(ownerId: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("cancel_bot_leagues_for_owner", { ownerId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async dismissBotLeague(leagueId: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("dismiss_bot_league", { leagueId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async listBotLeagues() : Promise<Result<BotLeagueSummary[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("list_bot_leagues") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async getBotLeagueDetail(leagueId: string) : Promise<Result<BotLeagueDetail, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_bot_league_detail", { leagueId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async readBotLeagueGame(leagueId: string, index: number) : Promise<Result<BotLeagueGameArtifact, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("read_bot_league_game", { leagueId, index }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async deleteBotLeague(leagueId: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("delete_bot_league", { leagueId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async exportBotLeague(leagueId: string, destinationDirectory: string, folderName: string) : Promise<Result<string, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("export_bot_league", { leagueId, destinationDirectory, folderName }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async listModelGameExperiments() : Promise<Result<ModelGameExperimentSummary[], string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("list_model_game_experiments") };
@@ -627,6 +723,7 @@ async getSoundServerPort() : Promise<Result<number, string>> {
 
 export const events = __makeEvents__<{
 bestMovesPayload: BestMovesPayload,
+botLeagueEvent: BotLeagueEvent,
 clockUpdateEvent: ClockUpdateEvent,
 databaseProgress: DatabaseProgress,
 gameMoveEvent: GameMoveEvent,
@@ -635,6 +732,7 @@ modelGameBatchEvent: ModelGameBatchEvent,
 progressEvent: ProgressEvent
 }>({
 bestMovesPayload: "best-moves-payload",
+botLeagueEvent: "bot-league-event",
 clockUpdateEvent: "clock-update-event",
 databaseProgress: "database-progress",
 gameMoveEvent: "game-move-event",
@@ -652,6 +750,18 @@ progressEvent: "progress-event"
 export type AnalysisOptions = { fen: string; moves: string[]; annotateNovelties: boolean; referenceDb: string | null; reversed: boolean }
 export type BestMoves = { nodes: number; depth: number; score: Score; uciMoves: string[]; sanMoves: string[]; multipv: number; nps: number }
 export type BestMovesPayload = { bestLines: BestMoves[]; engine: string; tab: string; fen: string; moves: string[]; progress: number }
+export type BotLeagueConfig = { ownerId: string; players: BotLeaguePlayer[]; gamesPerPair: number; alternateColors: boolean; baseSeed: number; seedStep: number; requestedConcurrency: number; maxCpuThreads: number; maxMemoryMb: number; maxRetries: number; timeControl: TimeControl | null; openingBook: OpeningBookConfig | null }
+export type BotLeagueDetail = { summary: BotLeagueSummary; config: BotLeagueConfig; results: BotLeagueGameResult[]; standings: BotLeagueStanding[] }
+export type BotLeagueEvent = { state: BotLeagueState }
+export type BotLeagueGameArtifact = { leagueId: string; index: number; pgn: string }
+export type BotLeagueGameResult = { index: number; pairIndex: number; round: number; gameId: string; whiteProfileId: string; blackProfileId: string; whitePlayer: string; blackPlayer: string; whiteSeed: number | null; blackSeed: number | null; attempts: number; status: BotLeagueGameStatus; result: GameResult | null; plies: number; error: string | null; artifactAvailable: boolean }
+export type BotLeagueGameStatus = "completed" | "failed"
+export type BotLeaguePlayer = { profileId: string; name: string; targetElo: number; profileVersion: number; catalogVersion: string; config: PlayerConfig }
+export type BotLeaguePlayerSummary = { profileId: string; name: string; targetElo: number; profileVersion: number; catalogVersion: string }
+export type BotLeagueStanding = { profileId: string; name: string; targetElo: number; games: number; whiteGames: number; blackGames: number; wins: number; draws: number; losses: number; points: number; scorePercent: number; estimatedElo: number | null }
+export type BotLeagueState = { leagueId: string; ownerId: string; status: BotLeagueStatus; totalGames: number; completedGames: number; failedGames: number; activeGames: string[]; queuedGames: number; effectiveConcurrency: number; estimatedThreadsPerGame: number; estimatedHashMbPerGame: number; results: BotLeagueGameResult[]; standings: BotLeagueStanding[] }
+export type BotLeagueStatus = "running" | "paused" | "cancelling" | "completed" | "cancelled"
+export type BotLeagueSummary = { leagueId: string; ownerId: string; status: BotLeagueStatus; createdAt: string; updatedAt: string; players: BotLeaguePlayerSummary[]; gamesPerPair: number; totalGames: number; completedGames: number; failedGames: number; recordedGames: number }
 export type ClockUpdateEvent = { gameId: string; whiteTime: bigint | null; blackTime: bigint | null }
 export type DatabaseInfo = { title: string; description: string; player_count: number; event_count: number; game_count: number; storage_size: bigint; filename: string; indexed: boolean }
 export type DatabaseProgress = { id: string; progress: number }
@@ -707,7 +817,9 @@ export type ModelGameExperimentSummary = { experimentId: string; ownerId: string
 export type MoveAnalysis = { best: BestMoves[]; novelty: boolean; is_sacrifice: boolean }
 export type NormalizedGame = { id: number; fen: string; event: string; event_id: number; site: string; site_id: number; date?: string | null; time?: string | null; round?: string | null; white: string; white_id: number; white_elo?: number | null; black: string; black_id: number; black_elo?: number | null; result: Outcome; time_control?: string | null; eco?: string | null; ply_count?: number | null; moves: string }
 export type OpeningBookConfig = { path: string; maxPly?: bigint }
-export type OpeningRepertoireConfig = { id: string; maxPly?: number; lines?: WeightedOpeningLine[] }
+export type OpeningLineSide = "white" | "black" | "both"
+export type OpeningRepertoireConfig = { id: string; version?: number; mode?: OpeningRepertoireMode; maxPly?: number; lines?: WeightedOpeningLine[] }
+export type OpeningRepertoireMode = "weighted" | "forcedLine" | "none"
 export type OutOpening = { name: string; fen: string }
 export type Outcome = "1-0" | "0-1" | "1/2-1/2" | "*"
 export type Player = { id: number; name: string | null; elo: number | null }
@@ -819,7 +931,7 @@ name: string;
  * The default value of this string option.
  */
 default: string | null } }
-export type WeightedOpeningLine = { moves: string[]; weight?: number }
+export type WeightedOpeningLine = { moves: string[]; weight?: number; side?: OpeningLineSide }
 
 /** tauri-specta globals **/
 

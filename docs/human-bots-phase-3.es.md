@@ -1,5 +1,7 @@
 # Bots humanos — Fase 3
 
+**Estado: Cerrada para su alcance de observabilidad el 18 de agosto de 2026.**
+
 Esta fase añade observabilidad para calibrar los perfiles y un modelo inicial de tiempo de reflexión humano. El objetivo todavía no es declarar calibrados el ELO, el repertorio ni los tiempos, sino producir datos comparables para poder ajustarlos con evidencia.
 
 ## Profundidad teórica configurada y observada
@@ -66,6 +68,10 @@ También incluye el tiempo total observado desde que comenzó la decisión hasta
 
 Los valores exactos variarán en cada partida. Un guion en `BlackBotRepertoireLastPly` o `BlackBotFirstMaiaPly` significa que no hubo ninguna jugada de ese origen.
 
+Este ejemplo conserva la versión de trazabilidad de la Fase 3. La Fase 4.1 la incrementa a `5` y
+añade versiones de perfil, catálogo, repertorio, modelo y ejes editoriales; el contrato actualizado está documentado
+en `human-bots-phase-4-1.es.md`.
+
 ## Prueba manual recomendada
 
 1. Reinicia la aplicación después de compilar esta versión.
@@ -90,4 +96,6 @@ Los valores exactos variarán en cada partida. Un guion en `BlackBotRepertoireLa
 - La media mostrada no controla por apertura, color, rival ni duración de la partida; el CSV permite hacer comparaciones más cuidadosas.
 - Las partidas abandonadas antes de que el backend emita un resultado final no se registran.
 - El ELO mostrado continúa siendo un objetivo de Maia, no una fuerza calibrada contra una población de jugadores.
-- Esta fase produce la evidencia necesaria; los ajustes estadísticos de repertorios, tiempos y ELO corresponden a la siguiente iteración de calibración.
+- Esta fase produce la evidencia necesaria; los ajustes estadísticos de repertorios, tiempos y ELO
+  corresponden a la Fase 4. La fase queda cerrada sin afirmar todavía que esos componentes estén
+  calibrados.

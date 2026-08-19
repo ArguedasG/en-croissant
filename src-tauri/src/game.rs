@@ -87,10 +87,36 @@ pub enum PlayerPresetCategory {
 #[serde(rename_all = "camelCase")]
 pub struct OpeningRepertoireConfig {
     pub id: String,
+    #[serde(default = "default_repertoire_version")]
+    pub version: u32,
+    #[serde(default)]
+    pub mode: OpeningRepertoireMode,
     #[serde(default = "default_repertoire_max_ply")]
     pub max_ply: u32,
     #[serde(default)]
     pub lines: Vec<WeightedOpeningLine>,
+}
+
+#[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, Type, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum OpeningRepertoireMode {
+    #[default]
+    Weighted,
+    ForcedLine,
+    None,
+}
+
+#[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, Type, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum OpeningLineSide {
+    White,
+    Black,
+    #[default]
+    Both,
+}
+
+fn default_repertoire_version() -> u32 {
+    1
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, Type)]
@@ -99,6 +125,8 @@ pub struct WeightedOpeningLine {
     pub moves: Vec<String>,
     #[serde(default = "default_repertoire_line_weight")]
     pub weight: u16,
+    #[serde(default)]
+    pub side: OpeningLineSide,
 }
 
 fn default_repertoire_max_ply() -> u32 {
@@ -1696,6 +1724,10 @@ fn select_repertoire_move(
     position: &Chess,
     rng: &mut impl Rng,
 ) -> Option<String> {
+    if repertoire.mode == OpeningRepertoireMode::None {
+        return None;
+    }
+
     if played_moves.len() as u32 >= repertoire.max_ply {
         return None;
     }
@@ -1704,7 +1736,13 @@ fn select_repertoire_move(
         .lines
         .iter()
         .filter(|line| {
-            line.moves.len() > played_moves.len()
+            let side_matches = match line.side {
+                OpeningLineSide::White => position.turn() == Color::White,
+                OpeningLineSide::Black => position.turn() == Color::Black,
+                OpeningLineSide::Both => true,
+            };
+            side_matches
+                && line.moves.len() > played_moves.len()
                 && line
                     .moves
                     .iter()
@@ -2151,6 +2189,7 @@ mod tests {
         WeightedOpeningLine {
             moves: moves.iter().map(|value| (*value).to_string()).collect(),
             weight,
+            side: OpeningLineSide::Both,
         }
     }
 
@@ -2425,6 +2464,8 @@ mod tests {
 
         let repertoire = OpeningRepertoireConfig {
             id: "test".to_string(),
+            version: 1,
+            mode: OpeningRepertoireMode::Weighted,
             max_ply: 8,
             lines: vec![
                 opening_line(&["d2d4", "d7d5"], 100),
@@ -2444,6 +2485,8 @@ mod tests {
     fn repertoire_respects_max_ply() {
         let repertoire = OpeningRepertoireConfig {
             id: "test".to_string(),
+            version: 1,
+            mode: OpeningRepertoireMode::Weighted,
             max_ply: 0,
             lines: vec![opening_line(&["e2e4"], 1)],
         };
@@ -2459,6 +2502,8 @@ mod tests {
     fn repertoire_weights_control_candidate_selection() {
         let repertoire = OpeningRepertoireConfig {
             id: "test".to_string(),
+            version: 1,
+            mode: OpeningRepertoireMode::Weighted,
             max_ply: 8,
             lines: vec![opening_line(&["e2e4"], 0), opening_line(&["d2d4"], 5)],
         };
@@ -2467,6 +2512,56 @@ mod tests {
         assert_eq!(
             select_repertoire_move(&repertoire, &[], &initial_position(), &mut rng),
             Some("d2d4".to_string())
+        );
+    }
+
+    #[test]
+    fn repertoire_respects_side_and_none_mode() {
+        let mut position = initial_position();
+        let repertoire = OpeningRepertoireConfig {
+            id: "sides".to_string(),
+            version: 2,
+            mode: OpeningRepertoireMode::Weighted,
+            max_ply: 8,
+            lines: vec![
+                WeightedOpeningLine {
+                    moves: vec!["e2e4".to_string(), "e7e5".to_string()],
+                    weight: 1,
+                    side: OpeningLineSide::White,
+                },
+                WeightedOpeningLine {
+                    moves: vec!["e2e4".to_string(), "c7c5".to_string()],
+                    weight: 1,
+                    side: OpeningLineSide::Black,
+                },
+            ],
+        };
+        let mut rng = StdRng::seed_from_u64(7);
+
+        assert_eq!(
+            select_repertoire_move(&repertoire, &[], &position, &mut rng),
+            Some("e2e4".to_string())
+        );
+        let first_move = UciMove::from_ascii(b"e2e4")
+            .expect("valid UCI")
+            .to_move(&position)
+            .expect("legal move");
+        position.play_unchecked(&first_move);
+        assert_eq!(
+            select_repertoire_move(&repertoire, &["e2e4".to_string()], &position, &mut rng),
+            Some("c7c5".to_string())
+        );
+
+        let no_repertoire = OpeningRepertoireConfig {
+            id: "none".to_string(),
+            version: 2,
+            mode: OpeningRepertoireMode::None,
+            max_ply: 0,
+            lines: Vec::new(),
+        };
+        assert_eq!(
+            select_repertoire_move(&no_repertoire, &[], &initial_position(), &mut rng),
+            None
         );
     }
 }

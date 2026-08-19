@@ -6,6 +6,7 @@ import {
   Divider,
   Group,
   Loader,
+  Modal,
   NumberInput,
   Paper,
   Portal,
@@ -25,6 +26,7 @@ import {
   IconPlus,
   IconRefresh,
   IconSettings,
+  IconTrophy,
   IconX,
   IconZoomCheck,
 } from "@tabler/icons-react";
@@ -82,6 +84,7 @@ import {
   buildHumanBotTraceHeaders,
   clampMaiaElo,
   getHumanBotProfile,
+  HUMAN_BOT_CONFIG_VERSION,
   isMaiaEngine,
 } from "@/utils/humanBots";
 import {
@@ -105,6 +108,7 @@ import BoardControls from "./BoardControls";
 import EditingCard from "./EditingCard";
 import HumanBotHistoryPanel from "./HumanBotHistoryPanel";
 import HumanBotMeasurementsPanel from "./HumanBotMeasurementsPanel";
+import BotLeaguePanel from "./BotLeaguePanel";
 import { ModelGameBatchProgress, ModelGameBatchSetup } from "./ModelGameBatchPanel";
 import ModelGameExperimentHistory from "./ModelGameExperimentHistory";
 import { OpponentForm, type OpponentSettings } from "./OpponentForm";
@@ -146,11 +150,15 @@ function hasConfiguredPlayer(settings: OpponentSettings): boolean {
   return Boolean(settings.engine);
 }
 
-function toMeasurementPlayer(settings: OpponentSettings): HumanBotMeasurementPlayer | null {
+function toMeasurementPlayer(
+  settings: OpponentSettings,
+  humanTimingOverride?: boolean,
+): HumanBotMeasurementPlayer | null {
   if (settings.type !== "humanBot") return null;
   return {
     profile: getHumanBotProfile(settings.profileId),
-    humanTimingEnabled: settings.humanTiming ?? true,
+    modelVersion: settings.engine?.version ?? null,
+    humanTimingEnabled: humanTimingOverride ?? settings.humanTiming ?? true,
     timeControl: settings.timeControl,
   };
 }
@@ -268,6 +276,7 @@ function BoardGame({ generatorMode = false }: { generatorMode?: boolean }) {
   const singleExperimentFinalizedRef = useRef(false);
 
   const [logsOpened, toggleLogsOpened] = useToggle();
+  const [botLeagueOpened, toggleBotLeagueOpened] = useToggle();
   const [logsColor, setLogsColor] = useState<"white" | "black">("white");
   const [engineLogs, setEngineLogs] = useState<EngineLog[]>([]);
   const [openingBookPath, setOpeningBookPath] = useAtom(gameOpeningBookPathAtom);
@@ -461,7 +470,11 @@ function BoardGame({ generatorMode = false }: { generatorMode?: boolean }) {
           value: setting.value?.toString() ?? "",
         })),
         openingRepertoire: buildHumanBotOpeningRepertoire(profile),
-        humanTiming: settings.humanTiming === false ? null : buildHumanBotTiming(profile),
+        humanTiming: generatorMode
+          ? null
+          : settings.humanTiming === false
+            ? null
+            : buildHumanBotTiming(profile),
         go: settings.timeControl ? null : { t: "Depth", c: 1 },
       };
     }
@@ -689,7 +702,8 @@ function BoardGame({ generatorMode = false }: { generatorMode?: boolean }) {
           buildHumanBotTraceHeaders(
             getHumanBotProfile(playerSettings.white.profileId),
             "White",
-            playerSettings.white.humanTiming ?? true,
+            generatorMode ? false : (playerSettings.white.humanTiming ?? true),
+            playerSettings.white.engine?.version,
           ),
         );
       }
@@ -699,7 +713,8 @@ function BoardGame({ generatorMode = false }: { generatorMode?: boolean }) {
           buildHumanBotTraceHeaders(
             getHumanBotProfile(playerSettings.black.profileId),
             "Black",
-            playerSettings.black.humanTiming ?? true,
+            generatorMode ? false : (playerSettings.black.humanTiming ?? true),
+            playerSettings.black.engine?.version,
           ),
         );
       }
@@ -730,7 +745,7 @@ function BoardGame({ generatorMode = false }: { generatorMode?: boolean }) {
           ...(generatorMode && playerSettings.black.type !== "human"
             ? { ModelGameBlackSeed: String(playerSettings.black.seed ?? 2) }
             : {}),
-          ...(hasHumanBot ? { HumanBotConfigVersion: "3" } : {}),
+          ...(hasHumanBot ? { HumanBotConfigVersion: String(HUMAN_BOT_CONFIG_VERSION) } : {}),
           ...humanBotHeaders,
         },
       };
@@ -873,8 +888,8 @@ function BoardGame({ generatorMode = false }: { generatorMode?: boolean }) {
         result: outcome,
         moves: payload.moves as GameMove[],
         players: {
-          white: toMeasurementPlayer(players.white),
-          black: toMeasurementPlayer(players.black),
+          white: toMeasurementPlayer(players.white, generatorMode ? false : undefined),
+          black: toMeasurementPlayer(players.black, generatorMode ? false : undefined),
         },
       });
 
@@ -948,6 +963,7 @@ function BoardGame({ generatorMode = false }: { generatorMode?: boolean }) {
       unlistenGameOver.then((f) => f());
     };
   }, [
+    generatorMode,
     gameId,
     gameState,
     scheduleUpdate,
@@ -1353,6 +1369,15 @@ function BoardGame({ generatorMode = false }: { generatorMode?: boolean }) {
                           setSettings={setBatchSettings}
                         />
                       )}
+                      {generatorMode && (
+                        <Button
+                          variant="light"
+                          leftSection={<IconTrophy size="1rem" />}
+                          onClick={() => toggleBotLeagueOpened(true)}
+                        >
+                          {t("BotLeague.OpenFromGenerator", "Torneos de bots")}
+                        </Button>
+                      )}
                       {generatorMode && <ModelGameExperimentHistory />}
                       <Group>
                         <Text flex={1} ta="center" fz="lg" fw="bold">
@@ -1402,6 +1427,7 @@ function BoardGame({ generatorMode = false }: { generatorMode?: boolean }) {
                             setOtherOpponent={setPlayer2Settings}
                             allowedTypes={generatorMode ? ["engine", "humanBot"] : undefined}
                             showSeed={generatorMode}
+                            humanTimingEnabled={!generatorMode}
                           />
                           <Divider orientation="vertical" />
                           <OpponentForm
@@ -1411,6 +1437,7 @@ function BoardGame({ generatorMode = false }: { generatorMode?: boolean }) {
                             setOtherOpponent={setPlayer1Settings}
                             allowedTypes={generatorMode ? ["engine", "humanBot"] : undefined}
                             showSeed={generatorMode}
+                            humanTimingEnabled={!generatorMode}
                           />
                         </Group>
                       </Box>
@@ -1596,6 +1623,16 @@ function BoardGame({ generatorMode = false }: { generatorMode?: boolean }) {
           )}
         </Paper>
       </Portal>
+      {generatorMode && (
+        <Modal
+          opened={botLeagueOpened}
+          onClose={() => toggleBotLeagueOpened(false)}
+          title={t("BotLeague.Title", "Liga de bots")}
+          size="xl"
+        >
+          <BotLeaguePanel id={activeTab ?? "model-game-generator"} embedded />
+        </Modal>
+      )}
       <Portal target="#bottomRight" style={{ height: "100%" }}>
         {gameState === "settingUp" && editingMode ? (
           <EditingCard

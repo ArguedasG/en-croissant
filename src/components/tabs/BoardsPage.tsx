@@ -70,6 +70,7 @@ export default function BoardsPage() {
         unwrap(await commands.killEngines(value));
         await commands.abortGame(`${value}-game`);
         await commands.cancelModelGameBatchesForOwner(value);
+        await commands.cancelBotLeaguesForOwner(value);
       }
     },
     [tabs, activeTab, setTabs, toggleSaveModal, setActiveTab],
