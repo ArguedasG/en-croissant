@@ -26,8 +26,8 @@ export const fileStorage: AsyncStringStorage = {
     },
 };
 
-export function createZodStorage<Value>(
-    schema: z.ZodType<Value>,
+export function createZodStorage<Input, Value>(
+    schema: z.ZodType<Value, z.ZodTypeDef, Input>,
     storage: SyncStringStorage,
 ): SyncStorage<Value> {
     return {

@@ -1,0 +1,1156 @@
+[Event "Lichess Endgame Positions Part 1: Introduction"]
+[Date "2020.12.19"]
+[Result "*"]
+[Variant "Standard"]
+[ECO "?"]
+[Opening "?"]
+[StudyName "Lichess Endgame Positions Part 1"]
+[ChapterName "Introduction"]
+[ChapterURL "https://lichess.org/study/ltYzNiMk/zPqLfxUF"]
+[Annotator "https://lichess.org/@/WatsonChenney"]
+[UTCDate "2020.12.19"]
+[UTCTime "21:51:56"]
+
+{ All the Endgame positions from the board editor on Lichess. Enjoy!
+Part 2: https://lichess.org/study/z2Dgc3pI
+Part 3: https://lichess.org/study/zSOROkF0 }
+ *
+
+
+[Event "Lichess Endgame Positions Part 1: Mate Queen and Rook"]
+[Date "2020.12.19"]
+[Result "*"]
+[Variant "Standard"]
+[ECO "?"]
+[Opening "?"]
+[StudyName "Lichess Endgame Positions Part 1"]
+[ChapterName "Mate Queen and Rook"]
+[ChapterURL "https://lichess.org/study/ltYzNiMk/LBasKix2"]
+[Annotator "https://lichess.org/@/WatsonChenney"]
+[FEN "8/8/8/3k4/8/8/8/5RQK w - - 0 1"]
+[SetUp "1"]
+[UTCDate "2020.12.19"]
+[UTCTime "21:33:45"]
+
+ *
+
+
+[Event "Lichess Endgame Positions Part 1: Mate Two Rooks"]
+[Date "2020.12.19"]
+[Result "*"]
+[Variant "Standard"]
+[ECO "?"]
+[Opening "?"]
+[StudyName "Lichess Endgame Positions Part 1"]
+[ChapterName "Mate Two Rooks"]
+[ChapterURL "https://lichess.org/study/ltYzNiMk/EgFOnUZH"]
+[Annotator "https://lichess.org/@/WatsonChenney"]
+[FEN "8/8/8/8/8/4k3/6R1/6RK w - - 0 1"]
+[SetUp "1"]
+[UTCDate "2020.12.19"]
+[UTCTime "21:34:58"]
+
+ *
+
+
+[Event "Lichess Endgame Positions Part 1: Mate Queen I"]
+[Date "2020.12.19"]
+[Result "*"]
+[Variant "Standard"]
+[ECO "?"]
+[Opening "?"]
+[StudyName "Lichess Endgame Positions Part 1"]
+[ChapterName "Mate Queen I"]
+[ChapterURL "https://lichess.org/study/ltYzNiMk/sbaTmNuN"]
+[Annotator "https://lichess.org/@/WatsonChenney"]
+[FEN "8/8/5Q2/2k5/4K3/8/8/8 w - - 0 1"]
+[SetUp "1"]
+[UTCDate "2020.12.19"]
+[UTCTime "21:37:15"]
+
+ *
+
+
+[Event "Lichess Endgame Positions Part 1: Mate Queen II"]
+[Date "2020.12.19"]
+[Result "*"]
+[Variant "Standard"]
+[ECO "?"]
+[Opening "?"]
+[StudyName "Lichess Endgame Positions Part 1"]
+[ChapterName "Mate Queen II"]
+[ChapterURL "https://lichess.org/study/ltYzNiMk/NazTPiN7"]
+[Annotator "https://lichess.org/@/WatsonChenney"]
+[FEN "8/8/8/3k4/8/8/8/6QK w - - 0 1"]
+[SetUp "1"]
+[UTCDate "2020.12.19"]
+[UTCTime "21:38:03"]
+
+ *
+
+
+[Event "Lichess Endgame Positions Part 1: Mate Rook I"]
+[Date "2020.12.19"]
+[Result "*"]
+[Variant "Standard"]
+[ECO "?"]
+[Opening "?"]
+[StudyName "Lichess Endgame Positions Part 1"]
+[ChapterName "Mate Rook I"]
+[ChapterURL "https://lichess.org/study/ltYzNiMk/q4uMoA5M"]
+[Annotator "https://lichess.org/@/WatsonChenney"]
+[FEN "3k4/R7/8/4K3/8/8/8/8 w - - 0 1"]
+[SetUp "1"]
+[UTCDate "2020.12.19"]
+[UTCTime "21:40:21"]
+
+{ [%csl Gd6,Ge6] }
+ *
+
+
+[Event "Lichess Endgame Positions Part 1: Mate Rook II"]
+[Date "2020.12.19"]
+[Result "*"]
+[Variant "Standard"]
+[ECO "?"]
+[Opening "?"]
+[StudyName "Lichess Endgame Positions Part 1"]
+[ChapterName "Mate Rook II"]
+[ChapterURL "https://lichess.org/study/ltYzNiMk/trmGDFHi"]
+[Annotator "https://lichess.org/@/WatsonChenney"]
+[FEN "8/8/8/8/4k3/8/8/6RK w - - 0 1"]
+[SetUp "1"]
+[UTCDate "2020.12.19"]
+[UTCTime "21:41:10"]
+
+ *
+
+
+[Event "Lichess Endgame Positions Part 1: Mate Bishop + Knight"]
+[Date "2020.12.19"]
+[Result "*"]
+[Variant "Standard"]
+[ECO "?"]
+[Opening "?"]
+[StudyName "Lichess Endgame Positions Part 1"]
+[ChapterName "Mate Bishop + Knight"]
+[ChapterURL "https://lichess.org/study/ltYzNiMk/CUNbTZH4"]
+[Annotator "https://lichess.org/@/WatsonChenney"]
+[FEN "8/8/8/8/4k3/8/6K1/6BN w - - 0 1"]
+[SetUp "1"]
+[UTCDate "2020.12.19"]
+[UTCTime "21:50:27"]
+
+ *
+
+
+[Event "Lichess Endgame Positions Part 1: Mate Two Bishops"]
+[Date "2020.12.19"]
+[Result "*"]
+[Variant "Standard"]
+[ECO "?"]
+[Opening "?"]
+[StudyName "Lichess Endgame Positions Part 1"]
+[ChapterName "Mate Two Bishops"]
+[ChapterURL "https://lichess.org/study/ltYzNiMk/CGmJK1sg"]
+[Annotator "https://lichess.org/@/WatsonChenney"]
+[FEN "K7/5B2/7B/8/4k3/8/8/8 w - - 0 1"]
+[SetUp "1"]
+[UTCDate "2020.12.19"]
+[UTCTime "21:53:11"]
+
+ *
+
+
+[Event "Lichess Endgame Positions Part 1: Queen vs Bishop"]
+[Date "2020.12.19"]
+[Result "*"]
+[Variant "Standard"]
+[ECO "?"]
+[Opening "?"]
+[StudyName "Lichess Endgame Positions Part 1"]
+[ChapterName "Queen vs Bishop"]
+[ChapterURL "https://lichess.org/study/ltYzNiMk/zHZ6M4FA"]
+[Annotator "https://lichess.org/@/WatsonChenney"]
+[FEN "8/8/3B4/6K1/8/8/2k5/q7 b - - 0 1"]
+[SetUp "1"]
+[UTCDate "2020.12.19"]
+[UTCTime "21:42:37"]
+
+ *
+
+
+[Event "Lichess Endgame Positions Part 1: Queen vs Knight"]
+[Date "2020.12.19"]
+[Result "*"]
+[Variant "Standard"]
+[ECO "?"]
+[Opening "?"]
+[StudyName "Lichess Endgame Positions Part 1"]
+[ChapterName "Queen vs Knight"]
+[ChapterURL "https://lichess.org/study/ltYzNiMk/J505gNcr"]
+[Annotator "https://lichess.org/@/WatsonChenney"]
+[FEN "8/8/8/3nk3/8/3Q4/8/7K w - - 0 1"]
+[SetUp "1"]
+[UTCDate "2020.12.19"]
+[UTCTime "21:43:39"]
+
+ *
+
+
+[Event "Lichess Endgame Positions Part 1: Queen vs Rook"]
+[Date "2020.12.19"]
+[Result "*"]
+[Variant "Standard"]
+[ECO "?"]
+[Opening "?"]
+[StudyName "Lichess Endgame Positions Part 1"]
+[ChapterName "Queen vs Rook"]
+[ChapterURL "https://lichess.org/study/ltYzNiMk/ZwTuJ0KD"]
+[Annotator "https://lichess.org/@/WatsonChenney"]
+[FEN "8/8/4r3/3k4/8/8/3K1Q2/8 w - - 0 1"]
+[SetUp "1"]
+[UTCDate "2020.12.19"]
+[UTCTime "21:46:41"]
+
+ *
+
+
+[Event "Lichess Endgame Positions Part 1: Pawn Ending I"]
+[Date "2020.12.19"]
+[Result "*"]
+[Variant "Standard"]
+[ECO "?"]
+[Opening "?"]
+[StudyName "Lichess Endgame Positions Part 1"]
+[ChapterName "Pawn Ending I"]
+[ChapterURL "https://lichess.org/study/ltYzNiMk/kcJTbaIE"]
+[Annotator "https://lichess.org/@/WatsonChenney"]
+[FEN "8/3k4/3P4/3K4/8/8/8/8 b - - 0 1"]
+[SetUp "1"]
+[UTCDate "2020.12.19"]
+[UTCTime "21:56:31"]
+
+ *
+
+
+[Event "Lichess Endgame Positions Part 1: Pawn Ending II"]
+[Date "2020.12.19"]
+[Result "*"]
+[Variant "Standard"]
+[ECO "?"]
+[Opening "?"]
+[StudyName "Lichess Endgame Positions Part 1"]
+[ChapterName "Pawn Ending II"]
+[ChapterURL "https://lichess.org/study/ltYzNiMk/aDHsRNST"]
+[Annotator "https://lichess.org/@/WatsonChenney"]
+[FEN "8/3k4/3P4/3K4/8/8/8/8 w - - 0 1"]
+[SetUp "1"]
+[UTCDate "2020.12.19"]
+[UTCTime "21:58:40"]
+
+ *
+
+
+[Event "Lichess Endgame Positions Part 1: Pawn Ending III"]
+[Date "2020.12.19"]
+[Result "*"]
+[Variant "Standard"]
+[ECO "?"]
+[Opening "?"]
+[StudyName "Lichess Endgame Positions Part 1"]
+[ChapterName "Pawn Ending III"]
+[ChapterURL "https://lichess.org/study/ltYzNiMk/MjPdnJdr"]
+[Annotator "https://lichess.org/@/WatsonChenney"]
+[FEN "6k1/8/8/8/8/8/P7/7K w - - 0 1"]
+[SetUp "1"]
+[UTCDate "2020.12.19"]
+[UTCTime "22:01:40"]
+
+ *
+
+
+[Event "Lichess Endgame Positions Part 1: Pawn Ending IV"]
+[Date "2020.12.19"]
+[Result "*"]
+[Variant "Standard"]
+[ECO "?"]
+[Opening "?"]
+[StudyName "Lichess Endgame Positions Part 1"]
+[ChapterName "Pawn Ending IV"]
+[ChapterURL "https://lichess.org/study/ltYzNiMk/cg5GU82A"]
+[Annotator "https://lichess.org/@/WatsonChenney"]
+[FEN "8/4k3/2K5/8/8/8/1P6/8 w - - 0 1"]
+[SetUp "1"]
+[UTCDate "2020.12.19"]
+[UTCTime "22:09:01"]
+
+ *
+
+
+[Event "Lichess Endgame Positions Part 1: Pawn Ending V"]
+[Date "2020.12.19"]
+[Result "*"]
+[Variant "Standard"]
+[ECO "?"]
+[Opening "?"]
+[StudyName "Lichess Endgame Positions Part 1"]
+[ChapterName "Pawn Ending V"]
+[ChapterURL "https://lichess.org/study/ltYzNiMk/PqL4rjwo"]
+[Annotator "https://lichess.org/@/WatsonChenney"]
+[FEN "5k2/8/4K3/5P2/8/8/8/8 w - - 0 1"]
+[SetUp "1"]
+[UTCDate "2020.12.19"]
+[UTCTime "22:09:58"]
+
+ *
+
+
+[Event "Lichess Endgame Positions Part 1: Pawn Ending VI"]
+[Date "2020.12.19"]
+[Result "*"]
+[Variant "Standard"]
+[ECO "?"]
+[Opening "?"]
+[StudyName "Lichess Endgame Positions Part 1"]
+[ChapterName "Pawn Ending VI"]
+[ChapterURL "https://lichess.org/study/ltYzNiMk/XIPYURId"]
+[Annotator "https://lichess.org/@/WatsonChenney"]
+[FEN "5k2/8/5K2/5P2/8/8/8/8 w - - 0 1"]
+[SetUp "1"]
+[UTCDate "2020.12.19"]
+[UTCTime "22:11:21"]
+
+ *
+
+
+[Event "Lichess Endgame Positions Part 1: Pawn Ending VII"]
+[Date "2020.12.19"]
+[Result "*"]
+[Variant "Standard"]
+[ECO "?"]
+[Opening "?"]
+[StudyName "Lichess Endgame Positions Part 1"]
+[ChapterName "Pawn Ending VII"]
+[ChapterURL "https://lichess.org/study/ltYzNiMk/rRilQ2QL"]
+[Annotator "https://lichess.org/@/WatsonChenney"]
+[FEN "5k2/8/4K3/5P2/8/8/8/8 b - - 0 1"]
+[SetUp "1"]
+[UTCDate "2020.12.19"]
+[UTCTime "22:12:54"]
+
+ *
+
+
+[Event "Lichess Endgame Positions Part 1: Pawn Ending VIII"]
+[Date "2020.12.19"]
+[Result "*"]
+[Variant "Standard"]
+[ECO "?"]
+[Opening "?"]
+[StudyName "Lichess Endgame Positions Part 1"]
+[ChapterName "Pawn Ending VIII"]
+[ChapterURL "https://lichess.org/study/ltYzNiMk/khuIRyy0"]
+[Annotator "https://lichess.org/@/WatsonChenney"]
+[FEN "5k2/8/5K2/5P2/8/8/8/8 b - - 0 1"]
+[SetUp "1"]
+[UTCDate "2020.12.19"]
+[UTCTime "22:14:00"]
+
+ *
+
+
+[Event "Lichess Endgame Positions Part 1: Pawn Ending IX"]
+[Date "2020.12.19"]
+[Result "*"]
+[Variant "Standard"]
+[ECO "?"]
+[Opening "?"]
+[StudyName "Lichess Endgame Positions Part 1"]
+[ChapterName "Pawn Ending IX"]
+[ChapterURL "https://lichess.org/study/ltYzNiMk/6lYb11jd"]
+[Annotator "https://lichess.org/@/WatsonChenney"]
+[FEN "7k/5K2/8/6P1/8/8/8/8 w - - 0 1"]
+[SetUp "1"]
+[UTCDate "2020.12.19"]
+[UTCTime "22:19:42"]
+
+ *
+
+
+[Event "Lichess Endgame Positions Part 1: Pawn Ending X"]
+[Date "2020.12.19"]
+[Result "*"]
+[Variant "Standard"]
+[ECO "?"]
+[Opening "?"]
+[StudyName "Lichess Endgame Positions Part 1"]
+[ChapterName "Pawn Ending X"]
+[ChapterURL "https://lichess.org/study/ltYzNiMk/h2OWISRa"]
+[Annotator "https://lichess.org/@/WatsonChenney"]
+[FEN "5k2/8/8/8/3PK3/8/8/8 w - - 0 1"]
+[SetUp "1"]
+[UTCDate "2020.12.19"]
+[UTCTime "22:22:17"]
+
+ *
+
+
+[Event "Lichess Endgame Positions Part 1: Pawn Ending XII"]
+[Date "2020.12.19"]
+[Result "*"]
+[Variant "Standard"]
+[ECO "?"]
+[Opening "?"]
+[StudyName "Lichess Endgame Positions Part 1"]
+[ChapterName "Pawn Ending XII"]
+[ChapterURL "https://lichess.org/study/ltYzNiMk/HK8xPeMp"]
+[Annotator "https://lichess.org/@/WatsonChenney"]
+[FEN "8/6k1/8/6K1/8/6P1/8/8 w - - 0 1"]
+[SetUp "1"]
+[UTCDate "2020.12.19"]
+[UTCTime "22:27:43"]
+
+ *
+
+
+[Event "Lichess Endgame Positions Part 1: Pawn Ending XI"]
+[Date "2020.12.19"]
+[Result "*"]
+[Variant "Standard"]
+[ECO "?"]
+[Opening "?"]
+[StudyName "Lichess Endgame Positions Part 1"]
+[ChapterName "Pawn Ending XI"]
+[ChapterURL "https://lichess.org/study/ltYzNiMk/bpjO6B88"]
+[Annotator "https://lichess.org/@/WatsonChenney"]
+[FEN "5k2/8/8/8/3PK3/8/8/8 b - - 0 1"]
+[SetUp "1"]
+[UTCDate "2020.12.19"]
+[UTCTime "22:23:11"]
+
+ *
+
+
+[Event "Lichess Endgame Positions Part 1: Pawn Ending XIII"]
+[Date "2020.12.19"]
+[Result "*"]
+[Variant "Standard"]
+[ECO "?"]
+[Opening "?"]
+[StudyName "Lichess Endgame Positions Part 1"]
+[ChapterName "Pawn Ending XIII"]
+[ChapterURL "https://lichess.org/study/ltYzNiMk/2kgZQIy6"]
+[Annotator "https://lichess.org/@/WatsonChenney"]
+[FEN "1k6/8/PK6/8/8/8/8/8 b - - 0 1"]
+[SetUp "1"]
+[UTCDate "2020.12.19"]
+[UTCTime "23:00:07"]
+
+ *
+
+
+[Event "Lichess Endgame Positions Part 1: Pawn Ending XIV"]
+[Date "2020.12.19"]
+[Result "*"]
+[Variant "Standard"]
+[ECO "?"]
+[Opening "?"]
+[StudyName "Lichess Endgame Positions Part 1"]
+[ChapterName "Pawn Ending XIV"]
+[ChapterURL "https://lichess.org/study/ltYzNiMk/W6Pn9Rg3"]
+[Annotator "https://lichess.org/@/WatsonChenney"]
+[FEN "8/4k3/6K1/8/7P/8/8/8 b - - 0 1"]
+[SetUp "1"]
+[UTCDate "2020.12.19"]
+[UTCTime "23:02:50"]
+
+ *
+
+
+[Event "Lichess Endgame Positions Part 1: Pawn Ending XV"]
+[Date "2020.12.19"]
+[Result "*"]
+[Variant "Standard"]
+[ECO "?"]
+[Opening "?"]
+[StudyName "Lichess Endgame Positions Part 1"]
+[ChapterName "Pawn Ending XV"]
+[ChapterURL "https://lichess.org/study/ltYzNiMk/e5IgmiPX"]
+[Annotator "https://lichess.org/@/WatsonChenney"]
+[FEN "k7/8/2P5/K7/8/8/8/8 w - - 0 1"]
+[SetUp "1"]
+[UTCDate "2020.12.19"]
+[UTCTime "23:10:18"]
+
+ *
+
+
+[Event "Lichess Endgame Positions Part 1: Pawn Ending XVI"]
+[Date "2020.12.19"]
+[Result "*"]
+[Variant "Standard"]
+[ECO "?"]
+[Opening "?"]
+[StudyName "Lichess Endgame Positions Part 1"]
+[ChapterName "Pawn Ending XVI"]
+[ChapterURL "https://lichess.org/study/ltYzNiMk/Wbt8eYEj"]
+[Annotator "https://lichess.org/@/WatsonChenney"]
+[FEN "8/6k1/4P3/6K1/8/8/8/8 w - - 0 1"]
+[SetUp "1"]
+[UTCDate "2020.12.19"]
+[UTCTime "23:12:00"]
+
+ *
+
+
+[Event "Lichess Endgame Positions Part 1: Pawn Ending XVII"]
+[Date "2020.12.19"]
+[Result "*"]
+[Variant "Standard"]
+[ECO "?"]
+[Opening "?"]
+[StudyName "Lichess Endgame Positions Part 1"]
+[ChapterName "Pawn Ending XVII"]
+[ChapterURL "https://lichess.org/study/ltYzNiMk/BUNtQ4rU"]
+[Annotator "https://lichess.org/@/WatsonChenney"]
+[FEN "k7/8/1PK5/8/8/8/8/8 w - - 0 1"]
+[SetUp "1"]
+[UTCDate "2020.12.19"]
+[UTCTime "23:14:05"]
+
+ *
+
+
+[Event "Lichess Endgame Positions Part 1: Pawns Ending I (Miscellaneous)"]
+[Date "2020.12.19"]
+[Result "*"]
+[Variant "Standard"]
+[ECO "?"]
+[Opening "?"]
+[StudyName "Lichess Endgame Positions Part 1"]
+[ChapterName "Pawns Ending I (Miscellaneous)"]
+[ChapterURL "https://lichess.org/study/ltYzNiMk/mL9FGJqi"]
+[Annotator "https://lichess.org/@/WatsonChenney"]
+[FEN "8/8/3k3p/3P3P/2K5/8/8/8 w - - 0 1"]
+[SetUp "1"]
+[UTCDate "2020.12.19"]
+[UTCTime "23:26:17"]
+
+ *
+
+
+[Event "Lichess Endgame Positions Part 1: Pawns Ending II (Miscellaneous)"]
+[Date "2020.12.19"]
+[Result "*"]
+[Variant "Standard"]
+[ECO "?"]
+[Opening "?"]
+[StudyName "Lichess Endgame Positions Part 1"]
+[ChapterName "Pawns Ending II (Miscellaneous)"]
+[ChapterURL "https://lichess.org/study/ltYzNiMk/dPJeUgMF"]
+[Annotator "https://lichess.org/@/WatsonChenney"]
+[FEN "8/8/8/1k5p/7P/1PK5/8/8 w - - 0 1"]
+[SetUp "1"]
+[UTCDate "2020.12.19"]
+[UTCTime "23:28:22"]
+
+ *
+
+
+[Event "Lichess Endgame Positions Part 1: Pawns Ending III (Miscellaneous)"]
+[Date "2020.12.19"]
+[Result "*"]
+[Variant "Standard"]
+[ECO "?"]
+[Opening "?"]
+[StudyName "Lichess Endgame Positions Part 1"]
+[ChapterName "Pawns Ending III (Miscellaneous)"]
+[ChapterURL "https://lichess.org/study/ltYzNiMk/uq9m1YX2"]
+[Annotator "https://lichess.org/@/WatsonChenney"]
+[FEN "8/8/p7/P7/3k4/3P4/3K4/8 w - - 0 1"]
+[SetUp "1"]
+[UTCDate "2020.12.19"]
+[UTCTime "23:31:57"]
+
+ *
+
+
+[Event "Lichess Endgame Positions Part 1: Pawns Ending IV (Miscellaneous)"]
+[Date "2020.12.19"]
+[Result "*"]
+[Variant "Standard"]
+[ECO "?"]
+[Opening "?"]
+[StudyName "Lichess Endgame Positions Part 1"]
+[ChapterName "Pawns Ending IV (Miscellaneous)"]
+[ChapterURL "https://lichess.org/study/ltYzNiMk/nYPsCIoM"]
+[Annotator "https://lichess.org/@/WatsonChenney"]
+[FEN "8/8/8/p7/P7/3k4/3P4/3K4 w - - 0 1"]
+[SetUp "1"]
+[UTCDate "2020.12.19"]
+[UTCTime "23:35:24"]
+
+ *
+
+
+[Event "Lichess Endgame Positions Part 1: Pawns Ending I"]
+[Date "2020.12.19"]
+[Result "*"]
+[Variant "Standard"]
+[ECO "?"]
+[Opening "?"]
+[StudyName "Lichess Endgame Positions Part 1"]
+[ChapterName "Pawns Ending I"]
+[ChapterURL "https://lichess.org/study/ltYzNiMk/jVsJ9BSZ"]
+[Annotator "https://lichess.org/@/WatsonChenney"]
+[FEN "8/1k6/8/1P6/1P6/1K6/8/8 w - - 0 1"]
+[SetUp "1"]
+[UTCDate "2020.12.19"]
+[UTCTime "23:38:46"]
+
+ *
+
+
+[Event "Lichess Endgame Positions Part 1: Pawns Ending II"]
+[Date "2020.12.19"]
+[Result "*"]
+[Variant "Standard"]
+[ECO "?"]
+[Opening "?"]
+[StudyName "Lichess Endgame Positions Part 1"]
+[ChapterName "Pawns Ending II"]
+[ChapterURL "https://lichess.org/study/ltYzNiMk/TEw0YXdM"]
+[Annotator "https://lichess.org/@/WatsonChenney"]
+[FEN "1k6/8/1P6/1P6/1K6/8/8/8 w - - 0 1"]
+[SetUp "1"]
+[UTCDate "2020.12.19"]
+[UTCTime "23:39:42"]
+
+ *
+
+
+[Event "Lichess Endgame Positions Part 1: Pawns Ending III"]
+[Date "2020.12.19"]
+[Result "*"]
+[Variant "Standard"]
+[ECO "?"]
+[Opening "?"]
+[StudyName "Lichess Endgame Positions Part 1"]
+[ChapterName "Pawns Ending III"]
+[ChapterURL "https://lichess.org/study/ltYzNiMk/1hbiFVHd"]
+[Annotator "https://lichess.org/@/WatsonChenney"]
+[FEN "8/8/8/5k2/5P1P/8/8/K7 w - - 0 1"]
+[SetUp "1"]
+[UTCDate "2020.12.19"]
+[UTCTime "23:41:16"]
+
+ *
+
+
+[Event "Lichess Endgame Positions Part 1: Pawns Ending IV"]
+[Date "2020.12.19"]
+[Result "*"]
+[Variant "Standard"]
+[ECO "?"]
+[Opening "?"]
+[StudyName "Lichess Endgame Positions Part 1"]
+[ChapterName "Pawns Ending IV"]
+[ChapterURL "https://lichess.org/study/ltYzNiMk/JxvMV8yM"]
+[Annotator "https://lichess.org/@/WatsonChenney"]
+[FEN "8/8/2k5/8/P2P4/8/8/7K w - - 0 1"]
+[SetUp "1"]
+[UTCDate "2020.12.19"]
+[UTCTime "23:43:47"]
+
+ *
+
+
+[Event "Lichess Endgame Positions Part 1: Pawns Ending V ⭐"]
+[Date "2020.12.19"]
+[Result "*"]
+[Variant "Standard"]
+[ECO "?"]
+[Opening "?"]
+[StudyName "Lichess Endgame Positions Part 1"]
+[ChapterName "Pawns Ending V ⭐"]
+[ChapterURL "https://lichess.org/study/ltYzNiMk/bba51T3i"]
+[Annotator "https://lichess.org/@/WatsonChenney"]
+[FEN "k7/8/1p6/1P6/8/8/7K/8 w - - 0 1"]
+[SetUp "1"]
+[UTCDate "2020.12.19"]
+[UTCTime "23:47:14"]
+
+ *
+
+
+[Event "Lichess Endgame Positions Part 1: Pawns Ending VI"]
+[Date "2020.12.19"]
+[Result "*"]
+[Variant "Standard"]
+[ECO "?"]
+[Opening "?"]
+[StudyName "Lichess Endgame Positions Part 1"]
+[ChapterName "Pawns Ending VI"]
+[ChapterURL "https://lichess.org/study/ltYzNiMk/8hVpjbBJ"]
+[Annotator "https://lichess.org/@/WatsonChenney"]
+[FEN "8/2K5/4p3/4P3/6k1/8/8/8 w - - 0 1"]
+[SetUp "1"]
+[UTCDate "2020.12.19"]
+[UTCTime "23:52:18"]
+
+ *
+
+
+[Event "Lichess Endgame Positions Part 1: Pawns Ending VII"]
+[Date "2020.12.19"]
+[Result "*"]
+[Variant "Standard"]
+[ECO "?"]
+[Opening "?"]
+[StudyName "Lichess Endgame Positions Part 1"]
+[ChapterName "Pawns Ending VII"]
+[ChapterURL "https://lichess.org/study/ltYzNiMk/6PZFArlx"]
+[Annotator "https://lichess.org/@/WatsonChenney"]
+[FEN "8/8/8/7k/3p2p1/3P4/6KP/8 b - - 0 1"]
+[SetUp "1"]
+[UTCDate "2020.12.19"]
+[UTCTime "23:57:28"]
+
+ *
+
+
+[Event "Lichess Endgame Positions Part 1: Pawns Ending VIII"]
+[Date "2020.12.19"]
+[Result "*"]
+[Variant "Standard"]
+[ECO "?"]
+[Opening "?"]
+[StudyName "Lichess Endgame Positions Part 1"]
+[ChapterName "Pawns Ending VIII"]
+[ChapterURL "https://lichess.org/study/ltYzNiMk/8R53DYDn"]
+[Annotator "https://lichess.org/@/WatsonChenney"]
+[FEN "8/8/8/5p2/3k4/5P2/8/6K1 w - - 0 1"]
+[SetUp "1"]
+[UTCDate "2020.12.19"]
+[UTCTime "23:59:31"]
+
+ *
+
+
+[Event "Lichess Endgame Positions Part 1: Pawns Ending IX"]
+[Date "2020.12.20"]
+[Result "*"]
+[Variant "Standard"]
+[ECO "?"]
+[Opening "?"]
+[StudyName "Lichess Endgame Positions Part 1"]
+[ChapterName "Pawns Ending IX"]
+[ChapterURL "https://lichess.org/study/ltYzNiMk/73uUSWQX"]
+[Annotator "https://lichess.org/@/WatsonChenney"]
+[FEN "8/1p6/1P6/8/7K/8/8/1k6 w - - 0 1"]
+[SetUp "1"]
+[UTCDate "2020.12.20"]
+[UTCTime "00:01:44"]
+
+ *
+
+
+[Event "Lichess Endgame Positions Part 1: Pawns Ending X"]
+[Date "2020.12.20"]
+[Result "*"]
+[Variant "Standard"]
+[ECO "?"]
+[Opening "?"]
+[StudyName "Lichess Endgame Positions Part 1"]
+[ChapterName "Pawns Ending X"]
+[ChapterURL "https://lichess.org/study/ltYzNiMk/TEUlBXNd"]
+[Annotator "https://lichess.org/@/WatsonChenney"]
+[FEN "8/p4K2/P7/8/8/8/1k6/8 w - - 0 1"]
+[SetUp "1"]
+[UTCDate "2020.12.20"]
+[UTCTime "00:07:19"]
+
+ *
+
+
+[Event "Lichess Endgame Positions Part 1: Pawns Ending XI"]
+[Date "2020.12.20"]
+[Result "*"]
+[Variant "Standard"]
+[ECO "?"]
+[Opening "?"]
+[StudyName "Lichess Endgame Positions Part 1"]
+[ChapterName "Pawns Ending XI"]
+[ChapterURL "https://lichess.org/study/ltYzNiMk/o4NWm99m"]
+[Annotator "https://lichess.org/@/WatsonChenney"]
+[FEN "8/p4K2/P7/8/8/8/7k/8 w - - 0 1"]
+[SetUp "1"]
+[UTCDate "2020.12.20"]
+[UTCTime "00:12:24"]
+
+ *
+
+
+[Event "Lichess Endgame Positions Part 1: Pawns Ending XII"]
+[Date "2020.12.20"]
+[Result "*"]
+[Variant "Standard"]
+[ECO "?"]
+[Opening "?"]
+[StudyName "Lichess Endgame Positions Part 1"]
+[ChapterName "Pawns Ending XII"]
+[ChapterURL "https://lichess.org/study/ltYzNiMk/IWIveMyf"]
+[Annotator "https://lichess.org/@/WatsonChenney"]
+[FEN "8/8/5p2/8/4P1k1/8/7K/8 w - - 0 1"]
+[SetUp "1"]
+[UTCDate "2020.12.20"]
+[UTCTime "00:13:52"]
+
+ *
+
+
+[Event "Lichess Endgame Positions Part 1: Pawns Ending XIII"]
+[Date "2020.12.20"]
+[Result "*"]
+[Variant "Standard"]
+[ECO "?"]
+[Opening "?"]
+[StudyName "Lichess Endgame Positions Part 1"]
+[ChapterName "Pawns Ending XIII"]
+[ChapterURL "https://lichess.org/study/ltYzNiMk/CSCo6e0a"]
+[Annotator "https://lichess.org/@/WatsonChenney"]
+[FEN "8/6p1/7k/8/1K6/8/1P6/8 w - - 0 1"]
+[SetUp "1"]
+[UTCDate "2020.12.20"]
+[UTCTime "00:19:14"]
+
+ *
+
+
+[Event "Lichess Endgame Positions Part 1: Pawns Ending XIV ⭐"]
+[Date "2020.12.20"]
+[Result "*"]
+[Variant "Standard"]
+[ECO "?"]
+[Opening "?"]
+[StudyName "Lichess Endgame Positions Part 1"]
+[ChapterName "Pawns Ending XIV ⭐"]
+[ChapterURL "https://lichess.org/study/ltYzNiMk/SYj5oNnT"]
+[Annotator "https://lichess.org/@/WatsonChenney"]
+[FEN "7K/8/k1P5/7p/8/8/8/8 w - - 0 1"]
+[SetUp "1"]
+[UTCDate "2020.12.20"]
+[UTCTime "00:23:06"]
+
+ *
+
+
+[Event "Lichess Endgame Positions Part 1: Pawns Ending XV"]
+[Date "2020.12.20"]
+[Result "*"]
+[Variant "Standard"]
+[ECO "?"]
+[Opening "?"]
+[StudyName "Lichess Endgame Positions Part 1"]
+[ChapterName "Pawns Ending XV"]
+[ChapterURL "https://lichess.org/study/ltYzNiMk/Ia73kVE5"]
+[Annotator "https://lichess.org/@/WatsonChenney"]
+[FEN "8/5p2/2k5/K7/8/1P6/8/8 b - - 0 1"]
+[SetUp "1"]
+[UTCDate "2020.12.20"]
+[UTCTime "00:33:55"]
+
+ *
+
+
+[Event "Lichess Endgame Positions Part 1: Pawns Ending XV (Extra)"]
+[Date "2020.12.20"]
+[Result "*"]
+[Variant "Standard"]
+[ECO "?"]
+[Opening "?"]
+[StudyName "Lichess Endgame Positions Part 1"]
+[ChapterName "Pawns Ending XV (Extra)"]
+[ChapterURL "https://lichess.org/study/ltYzNiMk/qPJAsUzX"]
+[Annotator "https://lichess.org/@/WatsonChenney"]
+[FEN "8/5p2/2k5/K7/8/1P6/8/8 w - - 0 1"]
+[SetUp "1"]
+[UTCDate "2020.12.20"]
+[UTCTime "01:40:51"]
+
+ *
+
+
+[Event "Lichess Endgame Positions Part 1: Pawns Ending XVI"]
+[Date "2020.12.20"]
+[Result "*"]
+[Variant "Standard"]
+[ECO "?"]
+[Opening "?"]
+[StudyName "Lichess Endgame Positions Part 1"]
+[ChapterName "Pawns Ending XVI"]
+[ChapterURL "https://lichess.org/study/ltYzNiMk/FsTYesiq"]
+[Annotator "https://lichess.org/@/WatsonChenney"]
+[FEN "8/p7/P7/8/8/3k4/3P4/3K4 w - - 0 1"]
+[SetUp "1"]
+[UTCDate "2020.12.20"]
+[UTCTime "00:39:14"]
+
+ *
+
+
+[Event "Lichess Endgame Positions Part 1: Pawns Ending XVIII⭐"]
+[Date "2020.12.20"]
+[Result "*"]
+[Variant "Standard"]
+[ECO "?"]
+[Opening "?"]
+[StudyName "Lichess Endgame Positions Part 1"]
+[ChapterName "Pawns Ending XVIII⭐"]
+[ChapterURL "https://lichess.org/study/ltYzNiMk/lsacIE0v"]
+[Annotator "https://lichess.org/@/WatsonChenney"]
+[FEN "2k5/8/p1P5/P2K4/8/8/8/8 w - - 0 1"]
+[SetUp "1"]
+[UTCDate "2020.12.20"]
+[UTCTime "00:43:12"]
+
+{ This one's a little tricky, but you if you execute this sequence perfectly you mate Black in 16 moves with 2 queens! }
+ *
+
+
+[Event "Lichess Endgame Positions Part 1: Pawns Ending XVII"]
+[Date "2020.12.20"]
+[Result "*"]
+[Variant "Standard"]
+[ECO "?"]
+[Opening "?"]
+[StudyName "Lichess Endgame Positions Part 1"]
+[ChapterName "Pawns Ending XVII"]
+[ChapterURL "https://lichess.org/study/ltYzNiMk/DZWeogdv"]
+[Annotator "https://lichess.org/@/WatsonChenney"]
+[FEN "5k2/5P1p/4K3/8/8/8/7P/8 w - - 0 1"]
+[SetUp "1"]
+[UTCDate "2020.12.20"]
+[UTCTime "00:41:21"]
+
+ *
+
+
+[Event "Lichess Endgame Positions Part 1: Pawns Ending XIX"]
+[Date "2020.12.20"]
+[Result "*"]
+[Variant "Standard"]
+[ECO "?"]
+[Opening "?"]
+[StudyName "Lichess Endgame Positions Part 1"]
+[ChapterName "Pawns Ending XIX"]
+[ChapterURL "https://lichess.org/study/ltYzNiMk/ctf95muK"]
+[Annotator "https://lichess.org/@/WatsonChenney"]
+[FEN "8/7p/5k2/8/5K2/8/6PP/8 b - - 0 1"]
+[SetUp "1"]
+[UTCDate "2020.12.20"]
+[UTCTime "00:52:13"]
+
+ *
+
+
+[Event "Lichess Endgame Positions Part 1: Pawns Ending XX⭐"]
+[Date "2020.12.20"]
+[Result "*"]
+[Variant "Standard"]
+[ECO "?"]
+[Opening "?"]
+[StudyName "Lichess Endgame Positions Part 1"]
+[ChapterName "Pawns Ending XX⭐"]
+[ChapterURL "https://lichess.org/study/ltYzNiMk/elIG6iIi"]
+[Annotator "https://lichess.org/@/WatsonChenney"]
+[FEN "8/7p/5k2/8/5K2/8/6PP/8 w - - 0 1"]
+[SetUp "1"]
+[UTCDate "2020.12.20"]
+[UTCTime "00:48:41"]
+
+ *
+
+
+[Event "Lichess Endgame Positions Part 1: Pawns Ending XXI"]
+[Date "2020.12.20"]
+[Result "*"]
+[Variant "Standard"]
+[ECO "?"]
+[Opening "?"]
+[StudyName "Lichess Endgame Positions Part 1"]
+[ChapterName "Pawns Ending XXI"]
+[ChapterURL "https://lichess.org/study/ltYzNiMk/3QSxX4dH"]
+[Annotator "https://lichess.org/@/WatsonChenney"]
+[FEN "8/7p/5k2/8/5K2/6P1/7P/8 w - - 0 1"]
+[SetUp "1"]
+[UTCDate "2020.12.20"]
+[UTCTime "00:55:59"]
+
+ *
+
+
+[Event "Lichess Endgame Positions Part 1: Pawns Ending XXII"]
+[Date "2020.12.20"]
+[Result "*"]
+[Variant "Standard"]
+[ECO "?"]
+[Opening "?"]
+[StudyName "Lichess Endgame Positions Part 1"]
+[ChapterName "Pawns Ending XXII"]
+[ChapterURL "https://lichess.org/study/ltYzNiMk/9cFMJNZL"]
+[Annotator "https://lichess.org/@/WatsonChenney"]
+[FEN "8/7p/8/5k2/8/5K2/6PP/8 b - - 0 1"]
+[SetUp "1"]
+[UTCDate "2020.12.20"]
+[UTCTime "01:00:14"]
+
+ *
+
+
+[Event "Lichess Endgame Positions Part 1: Pawns Ending XXIII"]
+[Date "2020.12.20"]
+[Result "*"]
+[Variant "Standard"]
+[ECO "?"]
+[Opening "?"]
+[StudyName "Lichess Endgame Positions Part 1"]
+[ChapterName "Pawns Ending XXIII"]
+[ChapterURL "https://lichess.org/study/ltYzNiMk/2tKaBztI"]
+[Annotator "https://lichess.org/@/WatsonChenney"]
+[FEN "8/6k1/6P1/p2p3P/8/8/2K5/8 b - - 0 1"]
+[SetUp "1"]
+[UTCDate "2020.12.20"]
+[UTCTime "01:05:01"]
+
+ *
+
+
+[Event "Lichess Endgame Positions Part 1: Pawns Ending XXIV"]
+[Date "2020.12.20"]
+[Result "*"]
+[Variant "Standard"]
+[ECO "?"]
+[Opening "?"]
+[StudyName "Lichess Endgame Positions Part 1"]
+[ChapterName "Pawns Ending XXIV"]
+[ChapterURL "https://lichess.org/study/ltYzNiMk/48CbPzMl"]
+[Annotator "https://lichess.org/@/WatsonChenney"]
+[FEN "8/6k1/6P1/p2p3P/8/8/2K5/8 w - - 0 1"]
+[SetUp "1"]
+[UTCDate "2020.12.20"]
+[UTCTime "01:06:21"]
+
+ *
+
+
+[Event "Lichess Endgame Positions Part 1: Pawns Ending XXV"]
+[Date "2020.12.20"]
+[Result "*"]
+[Variant "Standard"]
+[ECO "?"]
+[Opening "?"]
+[StudyName "Lichess Endgame Positions Part 1"]
+[ChapterName "Pawns Ending XXV"]
+[ChapterURL "https://lichess.org/study/ltYzNiMk/goYfQ2dq"]
+[Annotator "https://lichess.org/@/WatsonChenney"]
+[FEN "8/7k/p3p1pP/6P1/8/2K5/8/8 w - - 0 1"]
+[SetUp "1"]
+[UTCDate "2020.12.20"]
+[UTCTime "01:11:06"]
+
+ *
+
+
+[Event "Lichess Endgame Positions Part 1: Pawns Ending XXVI"]
+[Date "2020.12.20"]
+[Result "*"]
+[Variant "Standard"]
+[ECO "?"]
+[Opening "?"]
+[StudyName "Lichess Endgame Positions Part 1"]
+[ChapterName "Pawns Ending XXVI"]
+[ChapterURL "https://lichess.org/study/ltYzNiMk/h3mv14vV"]
+[Annotator "https://lichess.org/@/WatsonChenney"]
+[FEN "8/7k/6pP/6P1/8/p1p5/8/1K6 b - - 0 1"]
+[SetUp "1"]
+[UTCDate "2020.12.20"]
+[UTCTime "01:13:41"]
+
+ *
+
+
+[Event "Lichess Endgame Positions Part 1: Pawns Ending XXVII"]
+[Date "2020.12.20"]
+[Result "*"]
+[Variant "Standard"]
+[ECO "?"]
+[Opening "?"]
+[StudyName "Lichess Endgame Positions Part 1"]
+[ChapterName "Pawns Ending XXVII"]
+[ChapterURL "https://lichess.org/study/ltYzNiMk/ai2TyNzg"]
+[Annotator "https://lichess.org/@/WatsonChenney"]
+[FEN "8/8/8/1p2kPp1/6P1/4K3/8/8 b - - 0 1"]
+[SetUp "1"]
+[UTCDate "2020.12.20"]
+[UTCTime "01:18:27"]
+
+ *
+
+
+[Event "Lichess Endgame Positions Part 1: Pawns Ending XXVIII"]
+[Date "2020.12.20"]
+[Result "*"]
+[Variant "Standard"]
+[ECO "?"]
+[Opening "?"]
+[StudyName "Lichess Endgame Positions Part 1"]
+[ChapterName "Pawns Ending XXVIII"]
+[ChapterURL "https://lichess.org/study/ltYzNiMk/yHseJKv1"]
+[Annotator "https://lichess.org/@/WatsonChenney"]
+[FEN "8/8/8/p3kPp1/6P1/4K3/8/8 w - - 0 1"]
+[SetUp "1"]
+[UTCDate "2020.12.20"]
+[UTCTime "01:21:46"]
+
+ *
+
+
+[Event "Lichess Endgame Positions Part 1: Pawns Ending XXIX"]
+[Date "2020.12.20"]
+[Result "*"]
+[Variant "Standard"]
+[ECO "?"]
+[Opening "?"]
+[StudyName "Lichess Endgame Positions Part 1"]
+[ChapterName "Pawns Ending XXIX"]
+[ChapterURL "https://lichess.org/study/ltYzNiMk/cZynCruE"]
+[Annotator "https://lichess.org/@/WatsonChenney"]
+[FEN "8/8/2p1kPp1/6P1/4K3/8/8/8 w - - 0 1"]
+[SetUp "1"]
+[UTCDate "2020.12.20"]
+[UTCTime "01:25:52"]
+
+ *
+
+
+[Event "Lichess Endgame Positions Part 1: Pawns Ending XXX"]
+[Date "2020.12.20"]
+[Result "*"]
+[Variant "Standard"]
+[ECO "?"]
+[Opening "?"]
+[StudyName "Lichess Endgame Positions Part 1"]
+[ChapterName "Pawns Ending XXX"]
+[ChapterURL "https://lichess.org/study/ltYzNiMk/cuEdyREj"]
+[Annotator "https://lichess.org/@/WatsonChenney"]
+[FEN "8/8/3k4/1p2p3/1P2K3/8/7P/8 w - - 0 1"]
+[SetUp "1"]
+[UTCDate "2020.12.20"]
+[UTCTime "01:32:53"]
+
+ *
+
+
+

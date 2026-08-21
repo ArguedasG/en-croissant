@@ -7,7 +7,7 @@ import { getDefaultStore } from "jotai";
 import useSWR from "swr";
 import { commands } from "@/bindings";
 import type { FileMetadata } from "@/components/files/file";
-import { addRecentFileAtom, tabFamily } from "@/state/atoms";
+import { addRecentFileAtom, currentPracticeUnitAtom, tabFamily } from "@/state/atoms";
 import { unwrap } from "@/utils/unwrap";
 import { parsePGN } from "./chess";
 import { createTab, isInTempDir, type Tab } from "./tabs";
@@ -91,6 +91,7 @@ export async function openFile(
 
     if (fileInfo.metadata.type === "repertoire") {
         store.set(tabFamily(id), "practice");
+        store.set(currentPracticeUnitAtom, "line");
     }
 
     store.set(addRecentFileAtom, {

@@ -4,7 +4,13 @@ import { INITIAL_FEN } from "chessops/fen";
 import { useAtom, useSetAtom, useStore } from "jotai";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { activeTabAtom, addRecentFileAtom, tabFamily, tabsAtom } from "@/state/atoms";
+import {
+  activeTabAtom,
+  addRecentFileAtom,
+  currentPracticeUnitAtom,
+  tabFamily,
+  tabsAtom,
+} from "@/state/atoms";
 import { headersToPGN } from "@/utils/chess";
 import { createFile } from "@/utils/files";
 import { createTab } from "@/utils/tabs";
@@ -24,6 +30,7 @@ export default function CreateRepertoireModal({
 
   const [, setTabs] = useAtom(tabsAtom);
   const setActiveTab = useSetAtom(activeTabAtom);
+  const setPracticeUnit = useSetAtom(currentPracticeUnitAtom);
   const store = useStore();
   const navigate = useNavigate();
 
@@ -74,6 +81,7 @@ export default function CreateRepertoireModal({
     });
 
     store.set(tabFamily(id), "practice");
+    setPracticeUnit("line");
     store.set(addRecentFileAtom, {
       name: trimmedName,
       path: fileInfo.path,

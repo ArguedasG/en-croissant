@@ -14,7 +14,7 @@ import {
 import { chessgroundDests, chessgroundMove } from "chessops/compat";
 import { makeFen, parseFen } from "chessops/fen";
 import { makeSan } from "chessops/san";
-import { useAtom, useAtomValue, useSetAtom } from "jotai";
+import { useAtom, useAtomValue } from "jotai";
 import { memo, useCallback, useContext, useMemo, useState } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
 import { useTranslation } from "react-i18next";
@@ -26,6 +26,8 @@ import {
   autoPromoteAtom,
   bestMovesFamily,
   currentEvalOpenAtom,
+  enginesAtom,
+  currentPracticeUnitAtom,
   currentShowCommentsAtom,
   currentTabAtom,
   deckAtomFamily,
@@ -50,7 +52,11 @@ import classes from "@/styles/Chessboard.module.css";
 import { ANNOTATION_INFO, isBasicAnnotation } from "@/utils/annotation";
 import { getVariationLine } from "@/utils/chess";
 import { chessopsError, forceEnPassant, positionFromFen } from "@/utils/chessops";
+import { getBestMoves, killEngine, type LocalEngine } from "@/utils/engines";
+import { isMaiaEngine } from "@/utils/humanBots";
+import { acceptsOpeningDeviation } from "@/utils/openingTraining";
 import { getTabFile, getTabGameNumber } from "@/utils/tabs";
+import { genID } from "@/utils/tabs";
 import ShowMaterial from "../common/ShowMaterial";
 import { TreeStateContext } from "../common/TreeStateContext";
 import FideInfo from "../databases/FideInfo";
@@ -109,6 +115,7 @@ function Board({
   );
   const headers = useStore(store, (s) => s.headers);
   const currentNode = useStore(store, (s) => s.currentNode());
+  const position = useStore(store, (s) => s.position);
 
   const arrows = useAtomValue(
     bestMovesFamily({
@@ -147,6 +154,10 @@ function Board({
   }
 
   const [pendingMove, setPendingMove] = useState<NormalMove | null>(null);
+  const [classifyingDeviation, setClassifyingDeviation] = useState(false);
+  const deviationEvaluatorId = useState(() => genID())[0];
+  const storedEngines = useAtomValue(enginesAtom);
+  const engines = useMemo(() => storedEngines ?? [], [storedEngines]);
 
   const turn = pos?.turn || "white";
   const orientation = headers.orientation || "white";
@@ -170,7 +181,8 @@ function Board({
     }),
   );
 
-  const setPracticeState = useSetAtom(practiceStateAtom);
+  const [practiceState, setPracticeState] = useAtom(practiceStateAtom);
+  const practiceUnit = useAtomValue(currentPracticeUnitAtom);
   const [sessionStats, setSessionStats] = useAtom(practiceSessionStatsAtom);
   const cardStartTime = useAtomValue(practiceCardStartTimeAtom);
 
@@ -185,6 +197,106 @@ function Board({
 
       const i = deck.positions.indexOf(c);
       const timeTaken = Date.now() - cardStartTime;
+
+      if (practiceUnit === "line" && practiceState.linePath) {
+        const expectedChildIndex = practiceState.linePath[position.length] ?? 0;
+        const expectedSan = currentNode.children[expectedChildIndex]?.san;
+        if (!expectedSan) return;
+        const linePositionIndices = Array.from(
+          new Set([...(practiceState.linePositionIndices ?? []), i]),
+        );
+
+        if (san !== expectedSan) {
+          const playedUci = makeUci(move);
+          const referenceEngine = engines
+            .filter(
+              (engine): engine is LocalEngine =>
+                engine.type === "local" && Boolean(engine.path) && !isMaiaEngine(engine),
+            )
+            .sort((left, right) =>
+              /stockfish/i.test(left.name) === /stockfish/i.test(right.name)
+                ? 0
+                : /stockfish/i.test(left.name)
+                  ? -1
+                  : 1,
+            )[0];
+          if (referenceEngine) {
+            setClassifyingDeviation(true);
+            try {
+              const evaluated = await getBestMoves(
+                referenceEngine,
+                deviationEvaluatorId,
+                { t: "Depth", c: 16 },
+                {
+                  fen: rootFen,
+                  moves,
+                  extraOptions: [{ name: "MultiPV", value: "8" }],
+                },
+              );
+              const choices = evaluated?.[1] ?? [];
+              const candidate = choices.find((choice) => choice.uciMoves[0] === playedUci);
+              if (
+                choices[0] &&
+                candidate &&
+                acceptsOpeningDeviation(choices[0], candidate, pos.turn, 30)
+              ) {
+                setPracticeState({
+                  ...practiceState,
+                  phase: "deviation",
+                  currentFen: currentNode.fen,
+                  answer: expectedSan,
+                  playedMove: san,
+                  positionIndex: i,
+                  linePositionIndices,
+                  timeTaken,
+                });
+                notifications.show({
+                  title: "Buena desviación",
+                  message: `${san} es una buena jugada, pero no forma parte de esta línea.`,
+                  color: "blue",
+                });
+                return;
+              }
+            } catch {
+              // If the reference engine is unavailable, preserve strict repertoire validation.
+            } finally {
+              setClassifyingDeviation(false);
+              void killEngine(referenceEngine, deviationEvaluatorId).catch(() => undefined);
+            }
+          }
+          setPracticeState({
+            ...practiceState,
+            phase: "waiting",
+            currentFen: currentNode.fen,
+            answer: expectedSan,
+            playedMove: san,
+            positionIndex: i,
+            linePositionIndices,
+            mistakes: (practiceState.mistakes ?? 0) + 1,
+            timeTaken,
+          });
+          notifications.show({
+            title: t("Common.Incorrect"),
+            message: t("Board.Practice.CorrectMoveWas", { move: expectedSan }),
+            color: "red",
+          });
+          await new Promise((resolve) => setTimeout(resolve, 500));
+          goToNext();
+        } else {
+          storeMakeMove({ payload: move });
+          setPendingMove(null);
+          setPracticeState({
+            ...practiceState,
+            phase: "waiting",
+            currentFen: currentNode.fen,
+            answer: expectedSan,
+            positionIndex: i,
+            linePositionIndices,
+            timeTaken,
+          });
+        }
+        return;
+      }
 
       if (san !== c.answer) {
         if (sessionStats.mode !== "full") {
@@ -325,7 +437,7 @@ function Board({
   const practiceLock = !!practicing && !deck.positions.find((c) => c.fen === currentNode.fen);
 
   const movableColor: "white" | "black" | "both" | undefined = useMemo(() => {
-    return practiceLock
+    return practiceLock || classifyingDeviation
       ? undefined
       : editingMode
         ? "both"
@@ -336,7 +448,7 @@ function Board({
             .with("both", () => "both" as const)
             .with("none", () => undefined)
             .exhaustive();
-  }, [practiceLock, editingMode, movable, turn]);
+  }, [practiceLock, classifyingDeviation, editingMode, movable, turn]);
 
   const theme = useMantineTheme();
   const color = ANNOTATION_INFO[currentNode.annotations[0]]?.color || "gray";

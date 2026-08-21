@@ -25,12 +25,13 @@ import {
 import type { Tab } from "@/utils/tabs";
 import { createTab } from "@/utils/tabs";
 import { unwrap } from "@/utils/unwrap";
-import CreateRepertoireModal from "./CreateRepertoireModal";
 import ImportModal from "./ImportModal";
 import classes from "./NewTabHome.module.css";
 import {
   IconChess,
+  IconBook2,
   IconClock,
+  IconCrown,
   IconFileImport,
   IconFlask,
   IconPuzzle,
@@ -109,7 +110,6 @@ export default function NewTabHome({ id }: { id: string }) {
   const { t } = useTranslation();
 
   const [openModal, setOpenModal] = useState(false);
-  const [openRepertoireModal, setOpenRepertoireModal] = useState(false);
   const [, setTabs] = useAtom(tabsAtom);
   const setActiveTab = useSetAtom(activeTabAtom);
 
@@ -223,12 +223,12 @@ export default function NewTabHome({ id }: { id: string }) {
       },
     },
     {
-      icon: <IconTargetArrow size={60} />,
+      icon: <IconBook2 size={60} />,
       title: t("Home.Card.NewRepertoire.Title"),
       description: t("Home.Card.NewRepertoire.Desc"),
       label: t("Home.Card.NewRepertoire.Button"),
       onClick: () => {
-        setOpenRepertoireModal(true);
+        navigate({ to: "/training/openings" });
       },
     },
     {
@@ -246,13 +246,19 @@ export default function NewTabHome({ id }: { id: string }) {
       description: t("Home.Card.Puzzle.Desc"),
       label: t("Home.Card.Puzzle.Button"),
       onClick: () => {
-        setTabs((prev) => {
-          const tab = prev.find((t) => t.value === id);
-          if (!tab) return prev;
-          tab.name = t("Home.PuzzleTraining");
-          tab.type = "puzzles";
-          return [...prev];
-        });
+        navigate({ to: "/training/tactics" });
+      },
+    },
+    {
+      icon: <IconCrown size={60} />,
+      title: t("Training.Endgames.Title", "Finales"),
+      description: t(
+        "Training.Endgames.Desc",
+        "Estudia posiciones teóricas y practica contra un motor o bot",
+      ),
+      label: t("Training.Endgames.Button", "Abrir finales"),
+      onClick: () => {
+        navigate({ to: "/training/endgames" });
       },
     },
   ];
@@ -265,7 +271,6 @@ export default function NewTabHome({ id }: { id: string }) {
         setTabs={setTabs}
         setActiveTab={setActiveTab}
       />
-      <CreateRepertoireModal opened={openRepertoireModal} setOpened={setOpenRepertoireModal} />
       <Stack gap="lg" pt="sm">
         <SimpleGrid cols={{ base: 1, sm: 2, lg: 3 }}>
           {cards.map((card) => (

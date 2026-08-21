@@ -27,7 +27,7 @@ export function buildFromTree(tree: TreeNode, color: "white" | "black", start: n
     for (const item of iterator) {
         if (
             item.node.children.length === 0 ||
-            isPrefix(item.position, start) ||
+            (start.length > 0 && isPrefix(item.position, start)) ||
             !item.node.children[0].san ||
             cards.find((c) => c.fen === item.node.fen)
         ) {
@@ -111,6 +111,27 @@ export function updateCardPerformance(
             positions: data.positions,
             logs: data.logs,
         };
+    });
+}
+
+export function updateLinePerformance(
+    setPositions: React.Dispatch<SetStateAction<PracticeData>>,
+    indices: number[],
+    grade: 1 | 2 | 3 | 4,
+) {
+    const uniqueIndices = [...new Set(indices)];
+    setPositions((data) => {
+        const positions = [...data.positions];
+        const logs = [...data.logs];
+        for (const index of uniqueIndices) {
+            const position = positions[index];
+            if (!position) continue;
+            const schedulingCards = f.repeat(position.card, new Date());
+            const { card, log } = schedulingCards[grade];
+            positions[index] = { ...position, card };
+            logs.push({ ...log, fen: position.fen });
+        }
+        return { positions, logs };
     });
 }
 

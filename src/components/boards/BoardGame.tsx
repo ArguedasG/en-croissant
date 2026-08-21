@@ -20,6 +20,7 @@ import { useToggle } from "@mantine/hooks";
 import { notifications } from "@mantine/notifications";
 import {
   IconArrowsExchange,
+  IconArrowLeft,
   IconEdit,
   IconFileExport,
   IconFileText,
@@ -39,6 +40,7 @@ import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import { useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { match } from "ts-pattern";
+import { useNavigate } from "@tanstack/react-router";
 import { useStore } from "zustand";
 import type { GameMove, ModelGameBatchState, Outcome } from "@/bindings";
 import {
@@ -192,6 +194,7 @@ function mapBackendMoves(moves: { uci: string; clock: bigint | null }[]): Backen
 
 function BoardGame({ generatorMode = false }: { generatorMode?: boolean }) {
   const { t } = useTranslation();
+  const navigate = useNavigate();
   const activeTab = useAtomValue(activeTabAtom);
   const setActiveTab = useSetAtom(activeTabAtom);
 
@@ -250,6 +253,14 @@ function BoardGame({ generatorMode = false }: { generatorMode?: boolean }) {
   const store = useContext(TreeStateContext)!;
   const root = useStore(store, (s) => s.root);
   const headers = useStore(store, (s) => s.headers);
+  const trainingReturn =
+    headers.other?.ChessLabTrainingArea === "tactics"
+      ? { to: "/training/tactics" as const, label: "Volver a táctica" }
+      : headers.other?.ChessLabTrainingArea === "openings"
+        ? { to: "/training/openings" as const, label: "Volver a aperturas" }
+        : headers.other?.ChessLabTrainingArea === "endgames"
+          ? { to: "/training/endgames" as const, label: "Volver a finales" }
+          : null;
   const setFen = useStore(store, (s) => s.setFen);
   const setHeaders = useStore(store, (s) => s.setHeaders);
   const setResult = useStore(store, (s) => s.setResult);
@@ -1508,19 +1519,29 @@ function BoardGame({ generatorMode = false }: { generatorMode?: boolean }) {
                   </ScrollArea>
 
                   <Divider pb="sm" />
-                  <Button
-                    onClick={startGame}
-                    fullWidth
-                    variant="light"
-                    loading={isStarting}
-                    disabled={error !== null || !setupIsValid || isStarting}
-                  >
-                    {generatorMode
-                      ? batchSettings.enabled
-                        ? t("ModelGame.Batch.Generate", "Generate batch")
-                        : t("ModelGame.Generate", "Generate model game")
-                      : t("Board.Opponent.StartGame")}
-                  </Button>
+                  <Group grow>
+                    {trainingReturn && !generatorMode && (
+                      <Button
+                        variant="subtle"
+                        leftSection={<IconArrowLeft size="1rem" />}
+                        onClick={() => void navigate({ to: trainingReturn.to })}
+                      >
+                        {trainingReturn.label}
+                      </Button>
+                    )}
+                    <Button
+                      onClick={startGame}
+                      variant="light"
+                      loading={isStarting}
+                      disabled={error !== null || !setupIsValid || isStarting}
+                    >
+                      {generatorMode
+                        ? batchSettings.enabled
+                          ? t("ModelGame.Batch.Generate", "Generate batch")
+                          : t("ModelGame.Generate", "Generate model game")
+                        : t("Board.Opponent.StartGame")}
+                    </Button>
+                  </Group>
                 </Stack>
               )}
               {(gameState === "playing" || gameState === "gameOver") && (
@@ -1549,6 +1570,15 @@ function BoardGame({ generatorMode = false }: { generatorMode?: boolean }) {
                         loading={isEngineVsEngine && isAborting}
                       >
                         {isEngineVsEngine ? "Abort" : "Resign"}
+                      </Button>
+                    )}
+                    {gameState === "gameOver" && !generatorMode && trainingReturn && (
+                      <Button
+                        variant="default"
+                        onClick={() => void navigate({ to: trainingReturn.to })}
+                        leftSection={<IconArrowLeft />}
+                      >
+                        {trainingReturn.label}
                       </Button>
                     )}
                     {gameState === "gameOver" && !generatorMode && (

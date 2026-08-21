@@ -9,14 +9,27 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as TrainingRouteImport } from './routes/training'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as FilesRouteImport } from './routes/files'
 import { Route as EnginesRouteImport } from './routes/engines'
 import { Route as AccountsRouteImport } from './routes/accounts'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as TrainingIndexRouteImport } from './routes/training/index'
 import { Route as DatabasesIndexRouteImport } from './routes/databases/index'
+import { Route as TrainingTacticsRouteImport } from './routes/training/tactics'
+import { Route as TrainingOpeningsRouteImport } from './routes/training/openings'
+import { Route as TrainingLibraryRouteImport } from './routes/training/library'
+import { Route as TrainingEndgamesRouteImport } from './routes/training/endgames'
 import { Route as DatabasesDatabaseIdRouteImport } from './routes/databases/$databaseId'
+import { Route as TrainingTacticsIndexRouteImport } from './routes/training/tactics/index'
+import { Route as TrainingTacticsPracticeSetIdRouteImport } from './routes/training/tactics/practice/$setId'
 
+const TrainingRoute = TrainingRouteImport.update({
+  id: '/training',
+  path: '/training',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const SettingsRoute = SettingsRouteImport.update({
   id: '/settings',
   path: '/settings',
@@ -42,16 +55,52 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const TrainingIndexRoute = TrainingIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => TrainingRoute,
+} as any)
 const DatabasesIndexRoute = DatabasesIndexRouteImport.update({
   id: '/databases/',
   path: '/databases/',
   getParentRoute: () => rootRouteImport,
+} as any)
+const TrainingTacticsRoute = TrainingTacticsRouteImport.update({
+  id: '/tactics',
+  path: '/tactics',
+  getParentRoute: () => TrainingRoute,
+} as any)
+const TrainingOpeningsRoute = TrainingOpeningsRouteImport.update({
+  id: '/openings',
+  path: '/openings',
+  getParentRoute: () => TrainingRoute,
+} as any)
+const TrainingLibraryRoute = TrainingLibraryRouteImport.update({
+  id: '/library',
+  path: '/library',
+  getParentRoute: () => TrainingRoute,
+} as any)
+const TrainingEndgamesRoute = TrainingEndgamesRouteImport.update({
+  id: '/endgames',
+  path: '/endgames',
+  getParentRoute: () => TrainingRoute,
 } as any)
 const DatabasesDatabaseIdRoute = DatabasesDatabaseIdRouteImport.update({
   id: '/databases/$databaseId',
   path: '/databases/$databaseId',
   getParentRoute: () => rootRouteImport,
 } as any)
+const TrainingTacticsIndexRoute = TrainingTacticsIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => TrainingTacticsRoute,
+} as any)
+const TrainingTacticsPracticeSetIdRoute =
+  TrainingTacticsPracticeSetIdRouteImport.update({
+    id: '/practice/$setId',
+    path: '/practice/$setId',
+    getParentRoute: () => TrainingTacticsRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -59,8 +108,16 @@ export interface FileRoutesByFullPath {
   '/engines': typeof EnginesRoute
   '/files': typeof FilesRoute
   '/settings': typeof SettingsRoute
+  '/training': typeof TrainingRouteWithChildren
   '/databases/$databaseId': typeof DatabasesDatabaseIdRoute
+  '/training/endgames': typeof TrainingEndgamesRoute
+  '/training/library': typeof TrainingLibraryRoute
+  '/training/openings': typeof TrainingOpeningsRoute
+  '/training/tactics': typeof TrainingTacticsRouteWithChildren
   '/databases/': typeof DatabasesIndexRoute
+  '/training/': typeof TrainingIndexRoute
+  '/training/tactics/': typeof TrainingTacticsIndexRoute
+  '/training/tactics/practice/$setId': typeof TrainingTacticsPracticeSetIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -69,7 +126,13 @@ export interface FileRoutesByTo {
   '/files': typeof FilesRoute
   '/settings': typeof SettingsRoute
   '/databases/$databaseId': typeof DatabasesDatabaseIdRoute
+  '/training/endgames': typeof TrainingEndgamesRoute
+  '/training/library': typeof TrainingLibraryRoute
+  '/training/openings': typeof TrainingOpeningsRoute
   '/databases': typeof DatabasesIndexRoute
+  '/training': typeof TrainingIndexRoute
+  '/training/tactics': typeof TrainingTacticsIndexRoute
+  '/training/tactics/practice/$setId': typeof TrainingTacticsPracticeSetIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -78,8 +141,16 @@ export interface FileRoutesById {
   '/engines': typeof EnginesRoute
   '/files': typeof FilesRoute
   '/settings': typeof SettingsRoute
+  '/training': typeof TrainingRouteWithChildren
   '/databases/$databaseId': typeof DatabasesDatabaseIdRoute
+  '/training/endgames': typeof TrainingEndgamesRoute
+  '/training/library': typeof TrainingLibraryRoute
+  '/training/openings': typeof TrainingOpeningsRoute
+  '/training/tactics': typeof TrainingTacticsRouteWithChildren
   '/databases/': typeof DatabasesIndexRoute
+  '/training/': typeof TrainingIndexRoute
+  '/training/tactics/': typeof TrainingTacticsIndexRoute
+  '/training/tactics/practice/$setId': typeof TrainingTacticsPracticeSetIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -89,8 +160,16 @@ export interface FileRouteTypes {
     | '/engines'
     | '/files'
     | '/settings'
+    | '/training'
     | '/databases/$databaseId'
+    | '/training/endgames'
+    | '/training/library'
+    | '/training/openings'
+    | '/training/tactics'
     | '/databases/'
+    | '/training/'
+    | '/training/tactics/'
+    | '/training/tactics/practice/$setId'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -99,7 +178,13 @@ export interface FileRouteTypes {
     | '/files'
     | '/settings'
     | '/databases/$databaseId'
+    | '/training/endgames'
+    | '/training/library'
+    | '/training/openings'
     | '/databases'
+    | '/training'
+    | '/training/tactics'
+    | '/training/tactics/practice/$setId'
   id:
     | '__root__'
     | '/'
@@ -107,8 +192,16 @@ export interface FileRouteTypes {
     | '/engines'
     | '/files'
     | '/settings'
+    | '/training'
     | '/databases/$databaseId'
+    | '/training/endgames'
+    | '/training/library'
+    | '/training/openings'
+    | '/training/tactics'
     | '/databases/'
+    | '/training/'
+    | '/training/tactics/'
+    | '/training/tactics/practice/$setId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -117,12 +210,20 @@ export interface RootRouteChildren {
   EnginesRoute: typeof EnginesRoute
   FilesRoute: typeof FilesRoute
   SettingsRoute: typeof SettingsRoute
+  TrainingRoute: typeof TrainingRouteWithChildren
   DatabasesDatabaseIdRoute: typeof DatabasesDatabaseIdRoute
   DatabasesIndexRoute: typeof DatabasesIndexRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/training': {
+      id: '/training'
+      path: '/training'
+      fullPath: '/training'
+      preLoaderRoute: typeof TrainingRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/settings': {
       id: '/settings'
       path: '/settings'
@@ -158,12 +259,47 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/training/': {
+      id: '/training/'
+      path: '/'
+      fullPath: '/training/'
+      preLoaderRoute: typeof TrainingIndexRouteImport
+      parentRoute: typeof TrainingRoute
+    }
     '/databases/': {
       id: '/databases/'
       path: '/databases'
       fullPath: '/databases/'
       preLoaderRoute: typeof DatabasesIndexRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/training/tactics': {
+      id: '/training/tactics'
+      path: '/tactics'
+      fullPath: '/training/tactics'
+      preLoaderRoute: typeof TrainingTacticsRouteImport
+      parentRoute: typeof TrainingRoute
+    }
+    '/training/openings': {
+      id: '/training/openings'
+      path: '/openings'
+      fullPath: '/training/openings'
+      preLoaderRoute: typeof TrainingOpeningsRouteImport
+      parentRoute: typeof TrainingRoute
+    }
+    '/training/library': {
+      id: '/training/library'
+      path: '/library'
+      fullPath: '/training/library'
+      preLoaderRoute: typeof TrainingLibraryRouteImport
+      parentRoute: typeof TrainingRoute
+    }
+    '/training/endgames': {
+      id: '/training/endgames'
+      path: '/endgames'
+      fullPath: '/training/endgames'
+      preLoaderRoute: typeof TrainingEndgamesRouteImport
+      parentRoute: typeof TrainingRoute
     }
     '/databases/$databaseId': {
       id: '/databases/$databaseId'
@@ -172,8 +308,56 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DatabasesDatabaseIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/training/tactics/': {
+      id: '/training/tactics/'
+      path: '/'
+      fullPath: '/training/tactics/'
+      preLoaderRoute: typeof TrainingTacticsIndexRouteImport
+      parentRoute: typeof TrainingTacticsRoute
+    }
+    '/training/tactics/practice/$setId': {
+      id: '/training/tactics/practice/$setId'
+      path: '/practice/$setId'
+      fullPath: '/training/tactics/practice/$setId'
+      preLoaderRoute: typeof TrainingTacticsPracticeSetIdRouteImport
+      parentRoute: typeof TrainingTacticsRoute
+    }
   }
 }
+
+interface TrainingTacticsRouteChildren {
+  TrainingTacticsIndexRoute: typeof TrainingTacticsIndexRoute
+  TrainingTacticsPracticeSetIdRoute: typeof TrainingTacticsPracticeSetIdRoute
+}
+
+const TrainingTacticsRouteChildren: TrainingTacticsRouteChildren = {
+  TrainingTacticsIndexRoute: TrainingTacticsIndexRoute,
+  TrainingTacticsPracticeSetIdRoute: TrainingTacticsPracticeSetIdRoute,
+}
+
+const TrainingTacticsRouteWithChildren = TrainingTacticsRoute._addFileChildren(
+  TrainingTacticsRouteChildren,
+)
+
+interface TrainingRouteChildren {
+  TrainingEndgamesRoute: typeof TrainingEndgamesRoute
+  TrainingLibraryRoute: typeof TrainingLibraryRoute
+  TrainingOpeningsRoute: typeof TrainingOpeningsRoute
+  TrainingTacticsRoute: typeof TrainingTacticsRouteWithChildren
+  TrainingIndexRoute: typeof TrainingIndexRoute
+}
+
+const TrainingRouteChildren: TrainingRouteChildren = {
+  TrainingEndgamesRoute: TrainingEndgamesRoute,
+  TrainingLibraryRoute: TrainingLibraryRoute,
+  TrainingOpeningsRoute: TrainingOpeningsRoute,
+  TrainingTacticsRoute: TrainingTacticsRouteWithChildren,
+  TrainingIndexRoute: TrainingIndexRoute,
+}
+
+const TrainingRouteWithChildren = TrainingRoute._addFileChildren(
+  TrainingRouteChildren,
+)
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
@@ -181,6 +365,7 @@ const rootRouteChildren: RootRouteChildren = {
   EnginesRoute: EnginesRoute,
   FilesRoute: FilesRoute,
   SettingsRoute: SettingsRoute,
+  TrainingRoute: TrainingRouteWithChildren,
   DatabasesDatabaseIdRoute: DatabasesDatabaseIdRoute,
   DatabasesIndexRoute: DatabasesIndexRoute,
 }

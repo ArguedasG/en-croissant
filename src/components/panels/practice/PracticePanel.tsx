@@ -19,6 +19,7 @@ import {
 import { useToggle } from "@mantine/hooks";
 import {
   IconArrowBack,
+  IconArrowLeft,
   IconArrowRight,
   IconBook,
   IconCheck,
@@ -32,9 +33,11 @@ import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import { useCallback, useContext, useEffect, useRef, useState } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
 import { useTranslation } from "react-i18next";
+import { useNavigate } from "@tanstack/react-router";
 import { formatDate } from "ts-fsrs";
 import { formatNumber } from "@/utils/format";
 import { useStore } from "zustand";
+import { commands } from "@/bindings";
 import ConfirmModal from "@/components/common/ConfirmModal";
 import { TreeStateContext } from "@/components/common/TreeStateContext";
 import {
@@ -45,11 +48,15 @@ import {
   getStats,
   syncDeck,
   updateCardPerformance,
+  updateLinePerformance,
+  type Position,
 } from "@/components/files/opening";
 import {
   currentEvalOpenAtom,
   currentInvisibleAtom,
+  currentOpeningPracticeQueueAtom,
   currentPracticeTabAtom,
+  currentPracticeUnitAtom,
   currentShowCommentsAtom,
   currentTabAtom,
   deckAtomFamily,
@@ -61,11 +68,31 @@ import {
   practiceAutoDifficultyAtom,
 } from "@/state/atoms";
 import { getTabFile, getTabGameNumber } from "@/utils/tabs";
-import { findFen, getNodeAtPath } from "@/utils/treeReducer";
+import { parsePGN } from "@/utils/chess";
+import { findFen, getNodeAtPath, type TreeNode } from "@/utils/treeReducer";
+import { unwrap } from "@/utils/unwrap";
 import RepertoireInfo from "./RepertoireInfo";
+
+function getLineRepresentativeIndices(root: TreeNode, positions: Position[]): number[] {
+  const positionIndexByFen = new Map(positions.map((position, index) => [position.fen, index]));
+  const representatives = new Set<number>();
+
+  function visit(node: TreeNode, lastPositionIndex: number | null) {
+    const nextIndex = positionIndexByFen.get(node.fen) ?? lastPositionIndex;
+    if (node.children.length === 0) {
+      if (nextIndex !== null) representatives.add(nextIndex);
+      return;
+    }
+    node.children.forEach((child) => visit(child, nextIndex));
+  }
+
+  visit(root, null);
+  return [...representatives];
+}
 
 function PracticePanel() {
   const { t } = useTranslation();
+  const navigate = useNavigate();
 
   const store = useContext(TreeStateContext)!;
   const root = useStore(store, (s) => s.root);
@@ -73,8 +100,12 @@ function PracticePanel() {
   const goToMove = useStore(store, (s) => s.goToMove);
   const setPracticePath = useStore(store, (s) => s.setPracticePath);
   const currentFen = useStore(store, (s) => s.currentNode().fen);
+  const currentNode = useStore(store, (s) => s.currentNode());
+  const position = useStore(store, (s) => s.position);
+  const goToNext = useStore(store, (s) => s.goToNext);
+  const setTreeState = useStore(store, (s) => s.setState);
 
-  const currentTab = useAtomValue(currentTabAtom);
+  const [currentTab, setCurrentTab] = useAtom(currentTabAtom);
   const tabFile = getTabFile(currentTab);
   const [resetModal, toggleResetModal] = useToggle();
 
@@ -131,6 +162,32 @@ function PracticePanel() {
   const [sessionStats, setSessionStats] = useAtom(practiceSessionStatsAtom);
   const setCardStartTime = useSetAtom(practiceCardStartTimeAtom);
   const practiceAutoDifficulty = useAtomValue(practiceAutoDifficultyAtom);
+  const practiceUnit = useAtomValue(currentPracticeUnitAtom);
+  const [openingQueue, setOpeningQueue] = useAtom(currentOpeningPracticeQueueAtom);
+  const [pendingChapterStart, setPendingChapterStart] = useState(false);
+
+  const advanceOpeningChapter = useCallback(async () => {
+    if (!openingQueue || !tabFile) return false;
+    const nextIndex = openingQueue.currentIndex + 1;
+    const gameNumber = openingQueue.gameNumbers[nextIndex];
+    if (gameNumber === undefined) return false;
+    const records = unwrap(await commands.readGames(tabFile.path, gameNumber, gameNumber));
+    if (!records[0]) return false;
+    setTreeState(await parsePGN(records[0]));
+    setCurrentTab((previous) => {
+      if (previous.gameOrigin.kind !== "file" && previous.gameOrigin.kind !== "temp_file") {
+        return previous;
+      }
+      return {
+        ...previous,
+        gameOrigin: { ...previous.gameOrigin, gameNumber },
+      };
+    });
+    setOpeningQueue({ ...openingQueue, currentIndex: nextIndex });
+    setPracticeState({ phase: "idle" });
+    setPendingChapterStart(true);
+    return true;
+  }, [openingQueue, setCurrentTab, setOpeningQueue, setPracticeState, setTreeState, tabFile]);
 
   const newPractice = useCallback(
     (stats?: Partial<PracticeSessionStats>) => {
@@ -160,6 +217,34 @@ function PracticePanel() {
         return;
       }
       const path = findFen(c.fen, root);
+      if (practiceUnit === "line") {
+        const linePath = [...path];
+        let lineEnd = getNodeAtPath(root, linePath);
+        while (lineEnd.children.length > 0) {
+          linePath.push(0);
+          lineEnd = lineEnd.children[0];
+        }
+        const configuredStart = headers.start || [];
+        const startIsOnLine = configuredStart.every((value, index) => linePath[index] === value);
+        const lineStart = startIsOnLine ? configuredStart : [];
+        const startedAt = Date.now();
+        setPracticePath(linePath);
+        goToMove(lineStart);
+        setInvisible(true);
+        setShowComments(false);
+        setEvalOpen(false);
+        setCardStartTime(startedAt);
+        setPracticeState({
+          phase: "waiting",
+          currentFen: getNodeAtPath(root, lineStart).fen,
+          positionIndex: deck.positions.indexOf(c),
+          linePath,
+          linePositionIndices: [],
+          lineStartedAt: startedAt,
+          mistakes: 0,
+        });
+        return;
+      }
       goToMove(path);
       setPracticePath(path);
       setInvisible(true);
@@ -180,11 +265,44 @@ function PracticePanel() {
       setEvalOpen,
       setCardStartTime,
       setPracticeState,
+      practiceUnit,
+      headers.start,
     ],
   );
 
   useEffect(() => {
+    if (practiceUnit !== "line" || practiceState.phase !== "waiting") return;
+    const linePath = practiceState.linePath;
+    if (!linePath) return;
+    if (position.length >= linePath.length) {
+      setPracticeState((previous) => ({
+        ...previous,
+        phase: "correct",
+        timeTaken: Date.now() - (previous.lineStartedAt ?? Date.now()),
+      }));
+      return;
+    }
+
+    const orientation = headers.orientation || "white";
+    const isUserTurn =
+      orientation === "white" ? currentNode.halfMoves % 2 === 0 : currentNode.halfMoves % 2 === 1;
+    if (isUserTurn) return;
+    const timer = setTimeout(() => goToNext(), 350);
+    return () => clearTimeout(timer);
+  }, [
+    currentNode.halfMoves,
+    goToNext,
+    headers.orientation,
+    position,
+    practiceState.linePath,
+    practiceState.phase,
+    practiceUnit,
+    setPracticeState,
+  ]);
+
+  useEffect(() => {
     if (practiceState.phase === "correct") {
+      if (practiceUnit === "line") return;
       if (sessionStats.mode === "full") {
         const timer = setTimeout(() => {
           const remainingPositions = sessionStats.remainingPositions.slice(1);
@@ -226,10 +344,39 @@ function PracticePanel() {
     practiceAutoDifficulty,
     deck.positions,
     setDeck,
+    practiceUnit,
   ]);
 
   function handleQualityRating(grade: 1 | 2 | 3 | 4) {
     if (practiceState.phase !== "correct" || practiceState.positionIndex === undefined) return;
+
+    if (practiceUnit === "line") {
+      const indices = practiceState.linePositionIndices ?? [];
+      if (indices.length === 0) return;
+      updateLinePerformance(setDeck, indices, grade);
+      const mistakes = practiceState.mistakes ?? 0;
+      const remainingPositions =
+        sessionStats.mode === "full" ? sessionStats.remainingPositions.slice(1) : [];
+      setSessionStats((prev) => ({
+        ...prev,
+        remainingPositions,
+        correct: prev.correct + (mistakes === 0 ? 1 : 0),
+        incorrect: prev.incorrect + (mistakes > 0 ? 1 : 0),
+        streak: mistakes === 0 ? prev.streak + 1 : 0,
+        bestStreak: mistakes === 0 ? Math.max(prev.bestStreak, prev.streak + 1) : prev.bestStreak,
+      }));
+      if (
+        sessionStats.mode === "full" &&
+        remainingPositions.length === 0 &&
+        openingQueue &&
+        openingQueue.currentIndex + 1 < openingQueue.gameNumbers.length
+      ) {
+        void advanceOpeningChapter();
+        return;
+      }
+      newPractice(sessionStats.mode === "full" ? { remainingPositions, mode: "full" } : undefined);
+      return;
+    }
 
     const { positionIndex } = practiceState;
     const card = deck.positions[positionIndex].card;
@@ -258,7 +405,10 @@ function PracticePanel() {
   }
 
   function startFullPractice() {
-    const indices = deck.positions.map((_, i) => i);
+    const indices =
+      practiceUnit === "line"
+        ? getLineRepresentativeIndices(root, deck.positions)
+        : deck.positions.map((_, i) => i);
     const stats: Partial<PracticeSessionStats> = {
       mode: "full",
       remainingPositions: indices,
@@ -270,6 +420,15 @@ function PracticePanel() {
     setSessionStats((prev) => ({ ...prev, ...stats }));
     newPractice(stats);
   }
+
+  useEffect(() => {
+    if (!pendingChapterStart || deck.positions.length === 0) return;
+    const remainingPositions = getLineRepresentativeIndices(root, deck.positions);
+    const stats: Partial<PracticeSessionStats> = { mode: "full", remainingPositions };
+    setPendingChapterStart(false);
+    setSessionStats((previous) => ({ ...previous, ...stats }));
+    newPractice(stats);
+  }, [deck.positions, newPractice, pendingChapterStart, root, setSessionStats]);
 
   function skipCard() {
     if (sessionStats.mode === "full" && sessionStats.remainingPositions.length > 0) {
@@ -351,6 +510,23 @@ function PracticePanel() {
             )}
             {stats.total > 0 && (
               <>
+                {openingQueue && (
+                  <Alert color="blue" variant="light">
+                    Sesión de repertorio · capítulo {openingQueue.currentIndex + 1} de{" "}
+                    {openingQueue.gameNumbers.length}. Al terminar todas las líneas se abrirá el
+                    siguiente capítulo entrenable.
+                  </Alert>
+                )}
+                {practiceUnit === "line" && (
+                  <Button
+                    variant="subtle"
+                    size="xs"
+                    leftSection={<IconArrowLeft size={14} />}
+                    onClick={() => void navigate({ to: "/training/openings" })}
+                  >
+                    Volver a aperturas
+                  </Button>
+                )}
                 <Stack gap={4}>
                   <Group justify="space-between">
                     <Text fz="xs" fw={500}>
@@ -522,7 +698,9 @@ function PracticePanel() {
 
                 {practiceState.phase === "waiting" && (
                   <Paper p="sm" withBorder>
-                    {practiceState.currentFen && currentFen !== practiceState.currentFen ? (
+                    {practiceUnit !== "line" &&
+                    practiceState.currentFen &&
+                    currentFen !== practiceState.currentFen ? (
                       <Stack gap="xs" align="center">
                         <Text ta="center" fz="sm" c="dimmed">
                           {t("Board.Practice.NotOnPosition")}
@@ -571,16 +749,52 @@ function PracticePanel() {
                   </Paper>
                 )}
 
-                {practiceState.phase === "correct" && sessionStats.mode !== "full" && (
-                  <QualityRatingPanel
-                    onRate={handleQualityRating}
-                    card={
-                      practiceState.positionIndex !== undefined
-                        ? deck.positions[practiceState.positionIndex].card
-                        : undefined
-                    }
-                    timeTaken={practiceState.timeTaken}
-                  />
+                {practiceState.phase === "correct" &&
+                  (practiceUnit === "line" || sessionStats.mode !== "full") && (
+                    <Stack gap="xs">
+                      {practiceUnit === "line" && (
+                        <Alert color={(practiceState.mistakes ?? 0) > 0 ? "yellow" : "teal"}>
+                          Línea terminada con {practiceState.mistakes ?? 0} errores. Califícala una
+                          sola vez para programar la línea completa.
+                        </Alert>
+                      )}
+                      <QualityRatingPanel
+                        onRate={handleQualityRating}
+                        card={
+                          practiceUnit === "line" &&
+                          (practiceState.linePositionIndices?.length ?? 0) > 0
+                            ? deck.positions[practiceState.linePositionIndices![0]].card
+                            : practiceState.positionIndex !== undefined
+                              ? deck.positions[practiceState.positionIndex].card
+                              : undefined
+                        }
+                        timeTaken={practiceState.timeTaken}
+                      />
+                    </Stack>
+                  )}
+
+                {practiceState.phase === "deviation" && (
+                  <Alert color="blue" title="Buena jugada fuera del repertorio">
+                    <Stack gap="xs">
+                      <Text fz="sm">
+                        {practiceState.playedMove} mantiene una evaluación equivalente, pero la
+                        línea preparada continúa con {practiceState.answer}.
+                      </Text>
+                      <Button
+                        size="xs"
+                        variant="light"
+                        onClick={() => {
+                          goToNext();
+                          setPracticeState((previous) => ({
+                            ...previous,
+                            phase: "waiting",
+                          }));
+                        }}
+                      >
+                        Continuar con la línea preparada
+                      </Button>
+                    </Stack>
+                  </Alert>
                 )}
 
                 {practiceState.phase === "incorrect" && (

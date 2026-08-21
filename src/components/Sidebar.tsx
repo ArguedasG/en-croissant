@@ -7,6 +7,7 @@ import {
   IconDatabase,
   IconFiles,
   IconSettings,
+  IconTarget,
   IconUser,
 } from "@tabler/icons-react";
 import { Link, useMatchRoute } from "@tanstack/react-router";
@@ -41,6 +42,7 @@ const linksdata = [
   { icon: IconChess, label: "Board", url: "/" },
   { icon: IconUser, label: "User", url: "/accounts" },
   { icon: IconFiles, label: "Files", url: "/files" },
+  { icon: IconTarget, label: "Training", url: "/training" },
   {
     icon: IconDatabase,
     label: "Databases",
@@ -53,7 +55,7 @@ export function SideBar() {
   const { t } = useTranslation();
 
   const links = linksdata.map((link) => (
-    <NavbarLink {...link} label={t(`SideBar.${link.label}`)} key={link.label} />
+    <NavbarLink {...link} label={t(`SideBar.${link.label}`, link.label)} key={link.label} />
   ));
 
   return (

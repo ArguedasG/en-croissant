@@ -495,6 +495,18 @@ export const currentAnalysisTabAtom = tabValue(analysisTabFamily);
 const practiceTabFamily = atomFamily((_tab: string) => atom("train"));
 export const currentPracticeTabAtom = tabValue(practiceTabFamily);
 
+const practiceUnitFamily = atomFamily((_tab: string) => atom<"move" | "line">("move"));
+export const currentPracticeUnitAtom = tabValue(practiceUnitFamily);
+
+export type OpeningPracticeQueue = {
+    gameNumbers: number[];
+    currentIndex: number;
+};
+const openingPracticeQueueFamily = atomFamily((_tab: string) =>
+    atom<OpeningPracticeQueue | null>(null),
+);
+export const currentOpeningPracticeQueueAtom = tabValue(openingPracticeQueueFamily);
+
 const expandedEnginesFamily = atomFamily((_tab: string) => atom<string[] | undefined>(undefined));
 export const currentExpandedEnginesAtom = tabValue(expandedEnginesFamily);
 
@@ -566,6 +578,7 @@ export type PracticePhase =
     | "idle" // Not practicing
     | "waiting" // Waiting for user to make a move
     | "correct" // Move was correct, waiting for quality rating
+    | "deviation" // Good move outside the repertoire, waiting before resuming
     | "incorrect"; // Move was incorrect, showing feedback
 
 export type PracticeState = {
@@ -575,6 +588,10 @@ export type PracticeState = {
     playedMove?: string;
     timeTaken?: number;
     positionIndex?: number;
+    linePath?: number[];
+    linePositionIndices?: number[];
+    lineStartedAt?: number;
+    mistakes?: number;
 };
 
 export const practiceStateFamily = atomFamily((_tab: string) =>

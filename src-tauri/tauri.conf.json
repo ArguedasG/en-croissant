@@ -34,7 +34,10 @@
       "signingIdentity": "-"
     },
     "resources": {
-      "../sound/": "sound/"
+      "../sound/": "sound/",
+      "resources/endgames/FinalesParte1.pgn": "training/endgames/FinalesParte1.pgn",
+      "resources/endgames/FinalesParte2.pgn": "training/endgames/FinalesParte2.pgn",
+      "resources/endgames/FinalesParte3.pgn": "training/endgames/FinalesParte3.pgn"
     },
     "targets": "all",
     "createUpdaterArtifacts": "v1Compatible"
