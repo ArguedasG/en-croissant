@@ -18,7 +18,7 @@ import {
   IconCheck,
   IconChevronDown,
   IconChevronRight,
-  IconFlag,
+  IconDeviceFloppy,
   IconInfoCircle,
   IconPlayerPlay,
 } from "@tabler/icons-react";
@@ -47,7 +47,7 @@ function formatMoveNotation(halfMoves: number, san: string): string {
   return `${moveNum}${isWhite ? "." : "..."} ${san}`;
 }
 
-function RepertoireInfo() {
+function RepertoireInfo({ saveFile }: { saveFile?: () => void }) {
   const { t } = useTranslation();
   const store = useContext(TreeStateContext)!;
   const root = useStore(store, (s) => s.root);
@@ -259,23 +259,25 @@ function RepertoireInfo() {
         </Paper>
       )}
 
-      {!hasStart && !isEmptyTree && (
-        <Paper p="sm" my="sm" withBorder>
-          <Stack gap="xs">
-            <Text fz="xs" c="dimmed">
-              {t("Board.Practice.MarkStart")}
+      <Paper p="sm" my="sm" withBorder>
+        <Group justify="space-between" align="center" wrap="nowrap">
+          <div>
+            <Text fz="sm" fw={600}>
+              Copia editable del repertorio
             </Text>
-            <Button
-              leftSection={<IconFlag size={16} />}
-              variant="light"
-              size="xs"
-              onClick={() => setStart(position)}
-            >
-              {t("Board.Practice.Build.SetAsStart")}
-            </Button>
-          </Stack>
-        </Paper>
-      )}
+            <Text fz="xs" c="dimmed">
+              Guarda el árbol PGN y sincroniza sus líneas con el gestor.
+            </Text>
+          </div>
+          <Button
+            leftSection={<IconDeviceFloppy size={16} />}
+            onClick={() => saveFile?.()}
+            disabled={!saveFile}
+          >
+            Guardar cambios
+          </Button>
+        </Group>
+      </Paper>
 
       {isEmptyTree && position.length === 0 && (
         <Paper p="sm" my="sm" withBorder>

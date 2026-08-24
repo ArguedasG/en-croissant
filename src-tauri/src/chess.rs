@@ -1,4 +1,5 @@
 use std::{
+    collections::BTreeMap,
     fmt::Display,
     path::PathBuf,
     sync::{
@@ -511,6 +512,86 @@ pub async fn get_best_moves(
     Ok(None)
 }
 
+fn update_best_moves_snapshot(snapshot: &mut BTreeMap<u16, BestMoves>, best_moves: BestMoves) {
+    let latest_depth = snapshot
+        .values()
+        .map(|line| line.depth)
+        .max()
+        .unwrap_or_default();
+    if best_moves.depth < latest_depth {
+        return;
+    }
+    if best_moves.depth > latest_depth {
+        snapshot.clear();
+    }
+    snapshot.insert(best_moves.multipv, best_moves);
+}
+
+async fn get_best_moves_once_inner(
+    path: PathBuf,
+    engine_args: &[String],
+    go_mode: &GoMode,
+    options: EngineOptions,
+) -> Result<Vec<BestMoves>, Error> {
+    let (mut process, mut reader) = EngineProcess::new(path, engine_args).await?;
+    process.set_options(options).await?;
+    process.go(go_mode).await?;
+
+    let mut snapshot = BTreeMap::new();
+    while let Some(line) = reader.next_line().await? {
+        process.base.log_engine(&line);
+        match parse_one(&line) {
+            UciMessage::Info(attrs) => {
+                match parse_uci_attrs(attrs, &process.options.fen.parse()?, &process.options.moves)
+                {
+                    Ok(best_moves) => update_best_moves_snapshot(&mut snapshot, best_moves),
+                    Err(Error::NoMovesFound) => {}
+                    Err(error) => {
+                        warn!("Failed to parse bounded engine response: {line}, error: {error:?}");
+                    }
+                }
+            }
+            UciMessage::BestMove { .. } => {
+                process.running = false;
+                let _ = process.kill().await;
+                let result = snapshot.into_values().collect::<Vec<_>>();
+                return if result.is_empty() {
+                    Err(Error::NoMovesFound)
+                } else {
+                    Ok(result)
+                };
+            }
+            _ => {}
+        }
+    }
+
+    Err(Error::EngineDisconnected)
+}
+
+/// Runs an isolated, bounded engine query for an interactive decision.
+///
+/// Unlike `get_best_moves`, this command returns as soon as the engine emits
+/// `bestmove`. Dropping the private process on timeout also terminates the
+/// engine, so callers never depend on the lifecycle of the continuous analysis
+/// stream.
+#[tauri::command]
+#[specta::specta]
+pub async fn get_best_moves_once(
+    engine: PathBuf,
+    engine_args: Vec<String>,
+    go_mode: GoMode,
+    options: EngineOptions,
+    timeout_ms: u32,
+) -> Result<Vec<BestMoves>, Error> {
+    let timeout = Duration::from_millis(u64::from(timeout_ms.clamp(500, 30_000)));
+    tokio::time::timeout(
+        timeout,
+        get_best_moves_once_inner(engine, &engine_args, &go_mode, options),
+    )
+    .await
+    .map_err(|_| Error::EngineTimeout("bounded interactive evaluation".to_string()))?
+}
+
 #[derive(Serialize, Debug, Default, Type)]
 pub struct MoveAnalysis {
     best: Vec<BestMoves>,
@@ -776,9 +857,144 @@ fn naive_eval(pos: &Chess) -> i32 {
 
 #[cfg(test)]
 mod tests {
+    use std::{
+        env,
+        io::{self, BufRead, Write},
+        time::Instant,
+    };
+
     use shakmaty::FromSetup;
 
     use super::*;
+
+    static BOUNDED_ENGINE_TEST_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
+    #[test]
+    #[ignore = "helper process for bounded interactive UCI tests"]
+    fn mock_bounded_uci_engine() {
+        let Some(mode) = env::var_os("CHESS_LAB_MOCK_BOUNDED_UCI") else {
+            return;
+        };
+        let hangs = mode == "hang";
+        let stdin = io::stdin();
+        let mut stdout = io::stdout();
+
+        for line in stdin.lock().lines() {
+            let line = line.expect("mock engine must read stdin");
+            match line.as_str() {
+                "uci" => {
+                    writeln!(stdout, "id name Chess Lab bounded mock engine").unwrap();
+                    writeln!(
+                        stdout,
+                        "option name MultiPV type spin default 1 min 1 max 8"
+                    )
+                    .unwrap();
+                    writeln!(stdout, "option name UCI_Chess960 type check default false").unwrap();
+                    writeln!(stdout, "uciok").unwrap();
+                }
+                "isready" => writeln!(stdout, "readyok").unwrap(),
+                command if command.starts_with("go ") && !hangs => {
+                    writeln!(
+                        stdout,
+                        "info depth 16 multipv 1 score cp 40 nodes 10 nps 100 pv e2e4"
+                    )
+                    .unwrap();
+                    writeln!(
+                        stdout,
+                        "info depth 16 multipv 2 score cp 20 nodes 10 nps 100 pv d2d4"
+                    )
+                    .unwrap();
+                    writeln!(stdout, "bestmove e2e4").unwrap();
+                }
+                "quit" => break,
+                _ => {}
+            }
+            stdout.flush().unwrap();
+        }
+    }
+
+    fn bounded_mock_args() -> Vec<String> {
+        vec![
+            "--ignored".to_string(),
+            "--exact".to_string(),
+            "chess::tests::mock_bounded_uci_engine".to_string(),
+            "--nocapture".to_string(),
+        ]
+    }
+
+    fn bounded_test_options() -> EngineOptions {
+        EngineOptions {
+            fen: "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1".to_string(),
+            moves: Vec::new(),
+            extra_options: vec![EngineOption {
+                name: "MultiPV".to_string(),
+                value: "8".to_string(),
+            }],
+        }
+    }
+
+    #[tokio::test]
+    async fn bounded_engine_query_returns_on_bestmove_without_waiting_for_process_exit() {
+        let _guard = BOUNDED_ENGINE_TEST_LOCK.lock().await;
+        env::set_var("CHESS_LAB_MOCK_BOUNDED_UCI", "respond");
+        let result = get_best_moves_once(
+            env::current_exe().unwrap(),
+            bounded_mock_args(),
+            GoMode::Depth(16),
+            bounded_test_options(),
+            5_000,
+        )
+        .await;
+        env::remove_var("CHESS_LAB_MOCK_BOUNDED_UCI");
+
+        let lines = result.unwrap();
+        assert_eq!(lines.len(), 2);
+        assert_eq!(lines[0].multipv, 1);
+        assert_eq!(lines[0].uci_moves.first().map(String::as_str), Some("e2e4"));
+        assert_eq!(lines[1].multipv, 2);
+        assert_eq!(lines[1].uci_moves.first().map(String::as_str), Some("d2d4"));
+    }
+
+    #[tokio::test]
+    async fn bounded_engine_query_times_out_and_releases_the_caller() {
+        let _guard = BOUNDED_ENGINE_TEST_LOCK.lock().await;
+        env::set_var("CHESS_LAB_MOCK_BOUNDED_UCI", "hang");
+        let started = Instant::now();
+        let result = get_best_moves_once(
+            env::current_exe().unwrap(),
+            bounded_mock_args(),
+            GoMode::Depth(16),
+            bounded_test_options(),
+            1_500,
+        )
+        .await;
+        env::remove_var("CHESS_LAB_MOCK_BOUNDED_UCI");
+
+        assert!(matches!(result, Err(Error::EngineTimeout(_))));
+        assert!(started.elapsed() < Duration::from_secs(5));
+    }
+
+    #[tokio::test]
+    #[ignore = "requires CHESS_LAB_REFERENCE_ENGINE pointing to a strong UCI engine"]
+    async fn bounded_engine_query_works_with_a_real_reference_engine() {
+        let Some(path) = env::var_os("CHESS_LAB_REFERENCE_ENGINE") else {
+            eprintln!("CHESS_LAB_REFERENCE_ENGINE is not configured; skipping external audit");
+            return;
+        };
+        let lines = get_best_moves_once(
+            path.into(),
+            Vec::new(),
+            GoMode::Depth(12),
+            bounded_test_options(),
+            8_000,
+        )
+        .await
+        .unwrap();
+
+        assert!(!lines.is_empty());
+        assert_eq!(lines[0].multipv, 1);
+        assert!(!lines[0].uci_moves.is_empty());
+    }
 
     fn pos(fen: &str) -> Chess {
         let fen: Fen = fen.parse().unwrap();

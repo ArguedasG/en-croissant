@@ -501,6 +501,9 @@ export const currentPracticeUnitAtom = tabValue(practiceUnitFamily);
 export type OpeningPracticeQueue = {
     gameNumbers: number[];
     currentIndex: number;
+    repertoireId?: string;
+    variantIds?: string[];
+    lineIds?: string[];
 };
 const openingPracticeQueueFamily = atomFamily((_tab: string) =>
     atom<OpeningPracticeQueue | null>(null),
@@ -577,6 +580,8 @@ export const deckAtomFamily = atomFamily(
 export type PracticePhase =
     | "idle" // Not practicing
     | "waiting" // Waiting for user to make a move
+    | "classifying" // Waiting for a bounded engine classification
+    | "revealing" // Briefly showing the expected repertoire move
     | "correct" // Move was correct, waiting for quality rating
     | "deviation" // Good move outside the repertoire, waiting before resuming
     | "incorrect"; // Move was incorrect, showing feedback
@@ -591,7 +596,12 @@ export type PracticeState = {
     linePath?: number[];
     linePositionIndices?: number[];
     lineStartedAt?: number;
+    moveStartedAt?: number;
+    openingRepertoireId?: string;
+    openingVariantId?: string;
+    openingLineId?: string;
     mistakes?: number;
+    feedback?: "correct" | "incorrect" | "strict" | "engine-unavailable";
 };
 
 export const practiceStateFamily = atomFamily((_tab: string) =>

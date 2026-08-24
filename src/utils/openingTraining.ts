@@ -1,9 +1,12 @@
 import { commands, type BestMoves, type ScoreValue } from "@/bindings";
 import { getPGN, parsePGN, uciNormalize } from "@/utils/chess";
 import { positionFromFen } from "@/utils/chessops";
-import type { OpeningRepertoire, OpeningsState } from "@/utils/trainingAreas";
-import type { GameHeaders, TreeNode } from "@/utils/treeReducer";
+import { areaId, type OpeningRepertoire, type OpeningsState } from "@/utils/trainingAreas";
+import { createNode, type GameHeaders, type TreeNode } from "@/utils/treeReducer";
 import { unwrap } from "@/utils/unwrap";
+import { makeUci, parseUci } from "chessops";
+import { makeFen } from "chessops/fen";
+import { makeSan } from "chessops/san";
 
 export type OpeningImportConfig = {
     color: OpeningRepertoire["color"];
@@ -76,6 +79,30 @@ export function acceptsOpeningDeviation(
     return scoreForSide(bestValue, side) - scoreForSide(candidateValue, side) <= thresholdCp;
 }
 
+export type OpeningMoveClassification =
+    | "correct"
+    | "good-deviation"
+    | "incorrect"
+    | "engine-unavailable";
+
+export function classifyOpeningMove(
+    expectedSan: string,
+    playedSan: string,
+    playedUci: string,
+    evaluated: BestMoves[] | null,
+    side: "white" | "black",
+    thresholdCp = 30,
+): OpeningMoveClassification {
+    if (playedSan === expectedSan) return "correct";
+    if (!evaluated || evaluated.length === 0) return "engine-unavailable";
+
+    const candidate = evaluated.find((line) => line.uciMoves[0] === playedUci);
+    if (!candidate) return "incorrect";
+    return acceptsOpeningDeviation(evaluated[0], candidate, side, thresholdCp)
+        ? "good-deviation"
+        : "incorrect";
+}
+
 function cloneTreeNode(node: TreeNode, selectedPaths: number[][], depth: number): TreeNode {
     return {
         ...node,
@@ -92,38 +119,140 @@ export function filterOpeningTree(root: TreeNode, selectedPaths: number[][]): Tr
     return cloneTreeNode(root, selectedPaths, 0);
 }
 
+function moveKey(node: TreeNode): string | null {
+    return node.move ? makeUci(node.move) : null;
+}
+
+function mergeOpeningBranch(targetRoot: TreeNode, sourceRoot: TreeNode, path: number[]) {
+    let target = targetRoot;
+    let source = sourceRoot;
+    for (const childIndex of path) {
+        const sourceChild = source.children[childIndex];
+        if (!sourceChild) return;
+        const key = moveKey(sourceChild);
+        let targetChild = target.children.find((child) => moveKey(child) === key);
+        if (!targetChild) {
+            targetChild = {
+                ...sourceChild,
+                children: [],
+                shapes: [...sourceChild.shapes],
+                annotations: [...sourceChild.annotations],
+            };
+            target.children.push(targetChild);
+        }
+        target = targetChild;
+        source = sourceChild;
+    }
+}
+
+function openingPathForMoves(root: TreeNode, moves: string[]): number[] | null {
+    const path: number[] = [];
+    let node = root;
+    for (const uci of moves) {
+        const [position] = positionFromFen(node.fen);
+        if (!position) return null;
+        const childIndex = node.children.findIndex(
+            (child) => child.move && uciNormalize(position.clone(), child.move) === uci,
+        );
+        if (childIndex < 0) return null;
+        path.push(childIndex);
+        node = node.children[childIndex];
+    }
+    return path;
+}
+
+function lineKey(moves: string[]): string {
+    return moves.join(" ");
+}
+
+function commonMovePrefix(left: string[], right: string[]): number {
+    let index = 0;
+    while (index < left.length && index < right.length && left[index] === right[index]) index += 1;
+    return index;
+}
+
+const REPERTOIRE_ID_HEADER = "ChessLabRepertoireId";
+const VARIANT_ID_HEADER = "ChessLabVariantId";
+
+function appendOpeningMoves(root: TreeNode, moves: string[]) {
+    let node = root;
+    for (const uci of moves) {
+        const [position] = positionFromFen(node.fen);
+        const move = parseUci(uci);
+        if (!position || !move || !position.isLegal(move)) {
+            throw new Error(`La secuencia contiene una jugada ilegal: ${uci}.`);
+        }
+        const key = makeUci(move);
+        let child = node.children.find((candidate) => moveKey(candidate) === key);
+        if (!child) {
+            const san = makeSan(position, move);
+            position.play(move);
+            child = createNode({
+                fen: makeFen(position.toSetup()),
+                move,
+                san,
+                halfMoves: node.halfMoves + 1,
+            });
+            node.children.push(child);
+        }
+        node = child;
+    }
+}
+
 export async function buildOpeningTrainingPgn(
     state: OpeningsState,
     repertoireId: string,
 ): Promise<string> {
     const repertoire = state.repertoires[repertoireId];
     if (!repertoire) throw new Error("No se encontró el repertorio.");
-    if (repertoire.sourcePath === repertoire.path) {
-        throw new Error("Los repertorios creados en el tablero ya usan su PGN como fuente.");
-    }
-
     const variants = repertoire.variantIds
         .map((id) => state.variants[id])
         .filter((variant): variant is NonNullable<typeof variant> => Boolean(variant))
         .sort((left, right) => left.trainingRecordIndex - right.trainingRecordIndex);
+    const workingRecordCount = unwrap(await commands.countPgnGames(repertoire.path));
     const records =
-        repertoire.recordCount > 0
-            ? unwrap(await commands.readGames(repertoire.sourcePath, 0, repertoire.recordCount - 1))
+        workingRecordCount > 0
+            ? unwrap(await commands.readGames(repertoire.path, 0, workingRecordCount - 1))
             : [];
     const trainingRecords: string[] = [];
 
+    const parsedRecords = await Promise.all(records.map((raw) => parsePGN(raw)));
+    const recordForVariant = (variant: (typeof variants)[number]) =>
+        parsedRecords.find((record) => record.headers.other?.[VARIANT_ID_HEADER] === variant.id) ??
+        parsedRecords.find(
+            (record) =>
+                record.headers.other?.ChapterName === variant.name ||
+                record.headers.event === variant.name,
+        ) ??
+        parsedRecords[variant.trainingRecordIndex];
+
     for (const variant of variants) {
-        const raw = records[variant.sourceRecordIndex];
-        if (!raw) throw new Error(`No se encontró el capítulo «${variant.name}» en el PGN fuente.`);
-        const tree = await parsePGN(raw);
-        const selectedPaths = variant.lineIds
+        const selectedLines = variant.lineIds
             .map((id) => state.lines[id])
-            .filter((line): line is NonNullable<typeof line> => Boolean(line?.trainable))
-            .map((line) => line.path);
-        const root =
-            variant.contentType === "theory"
-                ? filterOpeningTree(tree.root, selectedPaths)
-                : filterOpeningTree(tree.root, []);
+            .filter((line): line is NonNullable<typeof line> => Boolean(line));
+        const firstLineSource = selectedLines
+            .map((line) =>
+                parsedRecords.find((record) => openingPathForMoves(record.root, line.moves)),
+            )
+            .find(Boolean);
+        const tree = recordForVariant(variant) ?? firstLineSource ?? parsedRecords[0];
+        if (!tree) {
+            throw new Error(`No se pudo crear el capítulo «${variant.name}».`);
+        }
+        const root = cloneTreeNode(tree.root, [], 0);
+        for (const line of selectedLines) {
+            const source = parsedRecords
+                .map((record) => ({ record, path: openingPathForMoves(record.root, line.moves) }))
+                .find((candidate) => candidate.path !== null);
+            if (source?.path) {
+                if (source.record.root.fen !== root.fen) {
+                    throw new Error(`La línea «${line.name}» parte de una posición incompatible.`);
+                }
+                mergeOpeningBranch(root, source.record.root, source.path);
+            } else {
+                appendOpeningMoves(root, line.moves);
+            }
+        }
         const orientation =
             repertoire.color === "both" ? (tree.headers.orientation ?? "white") : repertoire.color;
         trainingRecords.push(
@@ -132,7 +261,12 @@ export async function buildOpeningTrainingPgn(
                     ...tree.headers,
                     event: variant.name,
                     orientation,
-                    other: { ...tree.headers.other, ChapterName: variant.name },
+                    other: {
+                        ...tree.headers.other,
+                        ChapterName: variant.name,
+                        [REPERTOIRE_ID_HEADER]: repertoire.id,
+                        [VARIANT_ID_HEADER]: variant.id,
+                    },
                 },
                 glyphs: true,
                 comments: true,
@@ -143,6 +277,109 @@ export async function buildOpeningTrainingPgn(
     }
 
     return trainingRecords.join("\n\n\n");
+}
+
+export function syncOpeningVariantTree(
+    state: OpeningsState,
+    workingPath: string,
+    recordIndex: number,
+    root: TreeNode,
+    headers: GameHeaders,
+): OpeningsState {
+    const repertoire = Object.values(state.repertoires).find(
+        (candidate) => candidate.path === workingPath,
+    );
+    if (!repertoire) return state;
+
+    const taggedVariantId = headers.other?.[VARIANT_ID_HEADER];
+    let variant = taggedVariantId ? state.variants[taggedVariantId] : undefined;
+    if (variant?.repertoireId !== repertoire.id) variant = undefined;
+    variant ??= repertoire.variantIds
+        .map((id) => state.variants[id])
+        .find((candidate) => candidate?.trainingRecordIndex === recordIndex);
+
+    const variants = { ...state.variants };
+    const lines = { ...state.lines };
+    const variantIds = [...repertoire.variantIds];
+    const variantId = variant?.id ?? areaId("variant");
+    const extracted = extractOpeningImportLines(root, "all");
+    const existingByMoves = new Map(
+        (variant?.lineIds ?? [])
+            .map((id) => lines[id])
+            .filter((line): line is NonNullable<typeof line> => Boolean(line))
+            .map((line) => [lineKey(line.moves), line]),
+    );
+    const nextLineIds = extracted.map((entry) => {
+        const exact = existingByMoves.get(lineKey(entry.moves));
+        const existing =
+            exact ??
+            [...existingByMoves.values()]
+                .map((line) => ({ line, prefix: commonMovePrefix(line.moves, entry.moves) }))
+                .filter(
+                    ({ line, prefix }) =>
+                        prefix === Math.min(line.moves.length, entry.moves.length) && prefix > 0,
+                )
+                .sort((left, right) => right.prefix - left.prefix)[0]?.line;
+        if (existing) {
+            existingByMoves.delete(lineKey(existing.moves));
+            lines[existing.id] = {
+                ...existing,
+                fen: entry.fen,
+                moves: entry.moves,
+                path: entry.path,
+                plyCount: entry.plyCount,
+                sourceRecordIndex: null,
+            };
+            return existing.id;
+        }
+        const id = areaId("line");
+        lines[id] = {
+            id,
+            variantId,
+            name: entry.name,
+            fen: entry.fen,
+            moves: entry.moves,
+            path: entry.path,
+            plyCount: entry.plyCount,
+            trainable: variant?.contentType !== "modelGame",
+            sourceRecordIndex: null,
+            moveProgress: {},
+            session: { attempts: 0, completions: 0, flawless: 0, totalTimeMs: 0 },
+        };
+        return id;
+    });
+    for (const obsolete of existingByMoves.values()) delete lines[obsolete.id];
+
+    const stats = treeStats(root);
+    const name = openingName(headers, recordIndex);
+    variants[variantId] = {
+        id: variantId,
+        repertoireId: repertoire.id,
+        name,
+        lineIds: nextLineIds,
+        sourceRecordIndex: variant?.sourceRecordIndex ?? recordIndex,
+        trainingRecordIndex: recordIndex,
+        contentType: variant?.contentType ?? "theory",
+        commentCount: stats.commentCount,
+        hasVariations: stats.hasVariations,
+    };
+    if (!variant) {
+        variantIds.splice(Math.min(recordIndex, variantIds.length), 0, variantId);
+    }
+
+    return {
+        ...state,
+        lines,
+        variants,
+        repertoires: {
+            ...state.repertoires,
+            [repertoire.id]: {
+                ...repertoire,
+                variantIds,
+                updatedAt: new Date().toISOString(),
+            },
+        },
+    };
 }
 
 function filename(path: string): string {
@@ -230,9 +467,14 @@ async function parseOpeningRecord(
     const tree = await parsePGN(raw);
     const stats = treeStats(tree.root);
     const contentType = isModelGame(tree.headers) ? "modelGame" : "theory";
-    const lines = extractOpeningImportLines(tree.root, config.subvariationPolicy).map((line) => ({
+    const selectedLineKeys = new Set(
+        extractOpeningImportLines(tree.root, config.subvariationPolicy).map((line) =>
+            lineKey(line.moves),
+        ),
+    );
+    const lines = extractOpeningImportLines(tree.root, "all").map((line) => ({
         ...line,
-        trainable: contentType === "theory",
+        trainable: contentType === "theory" && selectedLineKeys.has(lineKey(line.moves)),
     }));
     const orientation =
         config.color === "both" ? (tree.headers.orientation ?? "white") : config.color;
@@ -240,7 +482,7 @@ async function parseOpeningRecord(
         headers: { ...tree.headers, orientation },
         glyphs: true,
         comments: true,
-        variations: config.subvariationPolicy === "all",
+        variations: true,
         extraMarkups: true,
     });
 

@@ -21,6 +21,22 @@ async getBestMoves(id: string, engine: string, engineArgs: string[], tab: string
     else return { status: "error", error: e  as any };
 }
 },
+/**
+ * Runs an isolated, bounded engine query for an interactive decision.
+ * 
+ * Unlike `get_best_moves`, this command returns as soon as the engine emits
+ * `bestmove`. Dropping the private process on timeout also terminates the
+ * engine, so callers never depend on the lifecycle of the continuous analysis
+ * stream.
+ */
+async getBestMovesOnce(engine: string, engineArgs: string[], goMode: GoMode, options: EngineOptions, timeoutMs: number) : Promise<Result<BestMoves[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_best_moves_once", { engine, engineArgs, goMode, options, timeoutMs }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async analyzeGame(id: string, engine: string, engineArgs: string[], goMode: GoMode, options: AnalysisOptions, uciOptions: EngineOption[]) : Promise<Result<MoveAnalysis[], string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("analyze_game", { id, engine, engineArgs, goMode, options, uciOptions }) };

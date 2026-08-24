@@ -55,8 +55,8 @@ use crate::bot_league::{
     read_bot_league_game, resume_bot_league, start_bot_league, BotLeagueEvent,
 };
 use crate::chess::{
-    analyze_game, cancel_analysis, get_engine_config, get_engine_logs, kill_engine, kill_engines,
-    stop_engine,
+    analyze_game, cancel_analysis, get_best_moves_once, get_engine_config, get_engine_logs,
+    kill_engine, kill_engines, stop_engine,
 };
 use crate::db::{
     clear_games, convert_pgn, create_indexes, delete_database, delete_db_game, delete_empty_games,
@@ -68,12 +68,12 @@ use crate::game::{
     abort_game, get_game_engine_logs, get_game_manifest, get_game_state, make_game_move,
     resign_game, start_game, take_back_game_move, ClockUpdateEvent, GameMoveEvent, GameOverEvent,
 };
+use crate::lexer::lex_pgn;
 use crate::model_game_batch::{
     cancel_model_game_batch, cancel_model_game_batches_for_owner, dismiss_model_game_batch,
     get_model_game_batch, pause_model_game_batch, resume_model_game_batch, start_model_game_batch,
     ModelGameBatchEvent,
 };
-use crate::lexer::lex_pgn;
 use crate::oauth::authenticate;
 use crate::pgn::{count_pgn_games, delete_game, read_games, write_game};
 use crate::puzzle::{
@@ -135,6 +135,7 @@ fn main() {
         .commands(tauri_specta::collect_commands!(
             close_splashscreen,
             get_best_moves,
+            get_best_moves_once,
             analyze_game,
             cancel_analysis,
             stop_engine,

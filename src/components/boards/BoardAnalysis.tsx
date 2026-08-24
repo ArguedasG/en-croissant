@@ -28,8 +28,10 @@ import {
   tabsAtom,
 } from "@/state/atoms";
 import { keyMapAtom } from "@/state/keybinds";
+import { trainingAreasAtom } from "@/state/trainingAreas";
 import { defaultPGN } from "@/utils/chess";
 import { buildModelGameSourcePgn } from "@/utils/modelGame";
+import { syncOpeningVariantTree } from "@/utils/openingTraining";
 import { createTab, getTabFile, saveToFile } from "@/utils/tabs";
 import DetachedEval from "../common/DetachedEval";
 import GameNotation from "../common/GameNotation";
@@ -65,28 +67,63 @@ function BoardAnalysis() {
   const position = useStore(store, (s) => s.position);
   const [, setTabs] = useAtom(tabsAtom);
   const setActiveTab = useSetAtom(activeTabAtom);
+  const setTrainingAreas = useSetAtom(trainingAreasAtom);
 
   const reset = useStore(store, (s) => s.reset);
   const clearShapes = useStore(store, (s) => s.clearShapes);
   const setAnnotation = useStore(store, (s) => s.setAnnotation);
 
   const saveFile = useCallback(async () => {
-    saveToFile({
+    await saveToFile({
       dir: documentDir,
       setCurrentTab,
       tab: currentTab,
       store,
     });
-  }, [setCurrentTab, currentTab, documentDir, store]);
+    if (tabFile?.metadata.type === "repertoire" && currentTab) {
+      const gameNumber =
+        currentTab.gameOrigin.kind === "file" || currentTab.gameOrigin.kind === "temp_file"
+          ? currentTab.gameOrigin.gameNumber
+          : 0;
+      const state = store.getState();
+      setTrainingAreas((previous) => {
+        const openings = syncOpeningVariantTree(
+          previous.openings,
+          tabFile.path,
+          gameNumber,
+          state.root,
+          state.headers,
+        );
+        return openings === previous.openings ? previous : { ...previous, openings };
+      });
+    }
+  }, [setCurrentTab, currentTab, documentDir, store, tabFile, setTrainingAreas]);
   const userSaveFile = useCallback(async () => {
-    saveToFile({
+    await saveToFile({
       dir: documentDir,
       setCurrentTab,
       tab: currentTab,
       store,
       isUserSave: true,
     });
-  }, [setCurrentTab, currentTab, documentDir, store]);
+    if (tabFile?.metadata.type === "repertoire" && currentTab) {
+      const gameNumber =
+        currentTab.gameOrigin.kind === "file" || currentTab.gameOrigin.kind === "temp_file"
+          ? currentTab.gameOrigin.gameNumber
+          : 0;
+      const state = store.getState();
+      setTrainingAreas((previous) => {
+        const openings = syncOpeningVariantTree(
+          previous.openings,
+          tabFile.path,
+          gameNumber,
+          state.root,
+          state.headers,
+        );
+        return openings === previous.openings ? previous : { ...previous, openings };
+      });
+    }
+  }, [setCurrentTab, currentTab, documentDir, store, tabFile, setTrainingAreas]);
 
   const generateModelGameFromPosition = useCallback(async () => {
     const pgn = buildModelGameSourcePgn(root, headers, position);
@@ -165,7 +202,7 @@ function BoardAnalysis() {
     [
       keyMap.PRACTICE_TAB.keys,
       () => {
-        isRepertoire && setCurrentTabSelected("practice");
+        if (isRepertoire) setCurrentTabSelected("practice");
       },
     ],
     [keyMap.ANALYSIS_TAB.keys, () => setCurrentTabSelected("analysis")],
@@ -252,7 +289,7 @@ function BoardAnalysis() {
             </Tabs.List>
             {isRepertoire && (
               <Tabs.Panel value="practice" flex={1} style={{ overflowY: "hidden" }}>
-                <PracticePanel />
+                <PracticePanel saveFile={userSaveFile} />
               </Tabs.Panel>
             )}
             <Tabs.Panel value="info" flex={1} style={{ overflowY: "hidden" }}>

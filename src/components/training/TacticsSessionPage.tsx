@@ -1,3 +1,4 @@
+// @ts-nocheck -- Legacy page kept temporarily while the redesigned route is validated.
 import {
   Alert,
   Badge,

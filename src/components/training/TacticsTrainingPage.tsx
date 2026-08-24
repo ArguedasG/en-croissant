@@ -23,7 +23,12 @@ import { addTacticsSet, getTacticsSetProgress, parseTrainingRecords } from "@/ut
 import { createTab } from "@/utils/tabs";
 
 function filename(path: string): string {
-  return path.split(/[\\/]/).pop()?.replace(/\.[^.]+$/, "") || "Set de táctica";
+  return (
+    path
+      .split(/[\\/]/)
+      .pop()
+      ?.replace(/\.[^.]+$/, "") || "Set de táctica"
+  );
 }
 
 export default function TacticsTrainingPage() {
@@ -113,8 +118,8 @@ export default function TacticsTrainingPage() {
               <div>
                 <Text fw={600}>Importar set propio</Text>
                 <Text size="sm" c="dimmed">
-                  Cada registro con FEN representa una posición. La solución puede estar en sus jugadas
-                  o calcularse bajo demanda al responder.
+                  Cada registro con FEN representa una posición. La solución puede estar en sus
+                  jugadas o calcularse bajo demanda al responder.
                 </Text>
               </div>
             </Group>
@@ -173,7 +178,13 @@ export default function TacticsTrainingPage() {
                       color="orange"
                       variant="light"
                       leftSection={<IconPlayerPlay size={16} />}
-                      onClick={() => navigate({ to: "/training/tactics/practice/$setId", params: { setId: set.id } })}
+                      onClick={() =>
+                        navigate({
+                          to: "/training/tactics/practice/$setId",
+                          params: { setId: set.id },
+                          search: { problem: undefined },
+                        })
+                      }
                     >
                       Practicar set
                     </Button>

@@ -2,6 +2,7 @@ import { commands } from "@/bindings";
 import { parsePGN, uciNormalize } from "@/utils/chess";
 import { positionFromFen } from "@/utils/chessops";
 import type {
+    TacticsExercise,
     TacticsSet,
     TacticsStartingActor,
     TacticsVariationPolicy,
@@ -141,7 +142,7 @@ export async function inspectTacticsPgn(
 }
 
 export async function loadTacticsFileExercise(
-    set: TacticsSet,
+    set: Pick<TacticsSet, "source" | "config">,
     recordIndex: number,
 ): Promise<TacticsLoadedExercise> {
     if (set.source?.kind !== "pgnFile") {
@@ -152,4 +153,31 @@ export async function loadTacticsFileExercise(
         throw new Error(`No se pudo leer el ejercicio ${recordIndex + 1}.`);
     }
     return parseTacticsPgnRecord(records[0], recordIndex, set.config);
+}
+
+export function loadEmbeddedTacticsExercise(
+    exercise: TacticsExercise,
+    recordIndex: number,
+): TacticsLoadedExercise {
+    return {
+        id: exercise.id,
+        recordIndex,
+        title: exercise.title,
+        fen: exercise.fen,
+        solutionLines: exercise.solutionMoves.length > 0 ? [exercise.solutionMoves] : [],
+        hasVariations: false,
+        sourcePgn: exercise.source.pgn ?? "",
+    };
+}
+
+export async function loadTacticsExercise(
+    set: Pick<TacticsSet, "source" | "exerciseIds" | "config">,
+    exercises: Record<string, TacticsExercise>,
+    recordIndex: number,
+): Promise<TacticsLoadedExercise> {
+    if (set.source?.kind === "pgnFile") return loadTacticsFileExercise(set, recordIndex);
+    const exerciseId = set.exerciseIds[recordIndex];
+    const exercise = exercises[exerciseId];
+    if (!exercise) throw new Error(`No se pudo leer el ejercicio ${recordIndex + 1}.`);
+    return loadEmbeddedTacticsExercise(exercise, recordIndex);
 }

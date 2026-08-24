@@ -241,8 +241,6 @@ pub async fn search_position(
     tab_id: String,
     state: tauri::State<'_, AppState>,
 ) -> Result<(Vec<PositionStats>, Vec<NormalizedGame>), Error> {
-    let db = &mut get_db_or_create(&state, file.to_str().unwrap(), ConnectionOptions::default())?;
-
     let collision_lock = {
         let entry = state
             .search_collisions
@@ -445,6 +443,9 @@ pub async fn search_position(
 
     info!("finished search in {:?}", start.elapsed());
 
+    // Keep pooled SQLite connections available while the mmap scan runs and while duplicate
+    // requests wait on the collision lock. The database is only needed for this final lookup.
+    let db = &mut get_db_or_create(&state, file.to_str().unwrap(), ConnectionOptions::default())?;
     let (white_players, black_players) = diesel::alias!(players as white, players as black);
     let games: Vec<(Game, Player, Player, Event, Site)> = games::table
         .inner_join(white_players.on(games::white_id.eq(white_players.field(players::id))))

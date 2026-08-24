@@ -94,6 +94,17 @@ export function getBestMoves(
         .then((r) => unwrap(r));
 }
 
+export function getBestMovesOnce(
+    engine: LocalEngine,
+    goMode: GoMode,
+    options: EngineOptions,
+    timeoutMs = 8_000,
+): Promise<BestMoves[]> {
+    return commands
+        .getBestMovesOnce(engine.path, engine.args ?? [], goMode, options, timeoutMs)
+        .then((r) => unwrap(r));
+}
+
 export function useDefaultEngines(os: Platform | undefined, opened: boolean) {
     const { data, error, isLoading } = useSWR(opened ? os : null, async (os: Platform) => {
         const bmi2: boolean = await commands.isBmi2Compatible();

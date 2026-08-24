@@ -73,6 +73,7 @@ import {
   modelGameWhiteSettingsAtom,
   tabsAtom,
 } from "@/state/atoms";
+import { trainingAreasAtom } from "@/state/trainingAreas";
 import { positionFromFen } from "@/utils/chessops";
 import { getPGN } from "@/utils/chess";
 import { serializeGameManifest } from "@/utils/gameManifest";
@@ -97,7 +98,13 @@ import {
 import { getModelGameArtifactPaths, serializeModelGameArtifacts } from "@/utils/modelGame";
 import { normalizeEngineGoMode } from "@/utils/enginePresets";
 import { createTab } from "@/utils/tabs";
-import type { GameHeaders, TreeState } from "@/utils/treeReducer";
+import {
+  isEndgameObjectiveMet,
+  recordEndgameAttempt,
+  type EndgamePosition,
+  type TrainingObjective,
+} from "@/utils/trainingAreas";
+import { defaultTree, type GameHeaders, type TreeState } from "@/utils/treeReducer";
 import { unwrap } from "@/utils/unwrap";
 import EngineLogsView from "../common/EngineLogsView";
 import FileInput from "../common/FileInput";
@@ -261,6 +268,21 @@ function BoardGame({ generatorMode = false }: { generatorMode?: boolean }) {
         : headers.other?.ChessLabTrainingArea === "endgames"
           ? { to: "/training/endgames" as const, label: "Volver a finales" }
           : null;
+  const [trainingAreas, setTrainingAreas] = useAtom(trainingAreasAtom);
+  const endgamePositionId = headers.other?.ChessLabEndgamePositionId;
+  const endgamePosition = endgamePositionId
+    ? trainingAreas.endgames.positions[endgamePositionId]
+    : undefined;
+  const endgameStudentColor = headers.other?.ChessLabEndgameStudentColor as
+    | "white"
+    | "black"
+    | undefined;
+  const endgameObjective = (endgamePosition?.objective ??
+    headers.other?.ChessLabEndgameObjective ??
+    "unknown") as TrainingObjective;
+  const endgameSuccess = endgameStudentColor
+    ? isEndgameObjectiveMet(endgameObjective, headers.result, endgameStudentColor)
+    : null;
   const setFen = useStore(store, (s) => s.setFen);
   const setHeaders = useStore(store, (s) => s.setHeaders);
   const setResult = useStore(store, (s) => s.setResult);
@@ -285,6 +307,9 @@ function BoardGame({ generatorMode = false }: { generatorMode?: boolean }) {
   const modelGameRunRef = useRef<ModelGameRun | null>(null);
   const singleExperimentIdRef = useRef<string | null>(null);
   const singleExperimentFinalizedRef = useRef(false);
+  const endgameStartedAtRef = useRef(Date.now());
+  const endgameAttemptRecordedRef = useRef(false);
+  const endgameAutoStartAttemptedRef = useRef(false);
 
   const [logsOpened, toggleLogsOpened] = useToggle();
   const [botLeagueOpened, toggleBotLeagueOpened] = useToggle();
@@ -340,13 +365,13 @@ function BoardGame({ generatorMode = false }: { generatorMode?: boolean }) {
     (players.black.type === "human" && whiteIsEngineControlled);
 
   const orientation = headers.orientation || "white";
-  const toggleOrientation = () => {
+  const toggleOrientation = useCallback(() => {
     setHeaders({
       ...headers,
       fen: root.fen,
       orientation: orientation === "black" ? "white" : "black",
     });
-  };
+  }, [headers, orientation, root.fen, setHeaders]);
 
   const fetchEngineLogs = useCallback(async () => {
     if (!gameId || !hasEngine) return;
@@ -618,6 +643,10 @@ function BoardGame({ generatorMode = false }: { generatorMode?: boolean }) {
     setIsStarting(true);
     setPlayers(playerSettings);
     historySavedRef.current = false;
+    if (endgamePositionId) {
+      endgameStartedAtRef.current = Date.now();
+      endgameAttemptRecordedRef.current = false;
+    }
 
     const boardOrientation =
       playerSettings.black.type === "human" && isEngineControlled(playerSettings.white)
@@ -807,7 +836,7 @@ function BoardGame({ generatorMode = false }: { generatorMode?: boolean }) {
     async (uci: string) => {
       if (!gameId || gameState !== "playing") return;
       try {
-        const result = await commands.makeGameMove(gameId, uci);
+        await commands.makeGameMove(gameId, uci);
         if (!isPlayerVsEngine && autoFlipBoard) {
           toggleOrientation();
         }
@@ -815,7 +844,7 @@ function BoardGame({ generatorMode = false }: { generatorMode?: boolean }) {
         console.error("Failed to make move:", err);
       }
     },
-    [gameId, gameState, toggleOrientation],
+    [autoFlipBoard, gameId, gameState, isPlayerVsEngine, toggleOrientation],
   );
 
   const pendingMovesRef = useRef<{ uci: string; clock: number | null }[] | null>(null);
@@ -854,7 +883,7 @@ function BoardGame({ generatorMode = false }: { generatorMode?: boolean }) {
 
   const onTakeBack = useCallback(async () => {
     if (!gameId || gameState !== "playing") return;
-    const result = await commands.takeBackGameMove(gameId);
+    await commands.takeBackGameMove(gameId);
   }, [gameId, gameState]);
 
   useEffect(() => {
@@ -893,6 +922,26 @@ function BoardGame({ generatorMode = false }: { generatorMode?: boolean }) {
 
       const outcome = gameResultToOutcome(payload.result);
       const recordedAt = new Date().toISOString();
+      const completedEndgameId = store.getState().headers.other?.ChessLabEndgamePositionId;
+      const completedStudentColor = store.getState().headers.other?.ChessLabEndgameStudentColor as
+        | "white"
+        | "black"
+        | undefined;
+      if (completedEndgameId && completedStudentColor && !endgameAttemptRecordedRef.current) {
+        endgameAttemptRecordedRef.current = true;
+        setTrainingAreas((previous) => {
+          const position = previous.endgames.positions[completedEndgameId];
+          if (!position) return previous;
+          return {
+            ...previous,
+            endgames: recordEndgameAttempt(previous.endgames, completedEndgameId, {
+              outcome,
+              success: isEndgameObjectiveMet(position.objective, outcome, completedStudentColor),
+              timeMs: Date.now() - endgameStartedAtRef.current,
+            }),
+          };
+        });
+      }
       const measurement = buildHumanBotGameMeasurement({
         gameId: payload.gameId,
         recordedAt,
@@ -984,6 +1033,7 @@ function BoardGame({ generatorMode = false }: { generatorMode?: boolean }) {
     setHistory,
     setMeasurements,
     setResult,
+    setTrainingAreas,
     store,
   ]);
 
@@ -1050,6 +1100,26 @@ function BoardGame({ generatorMode = false }: { generatorMode?: boolean }) {
     hasConfiguredPlayer(player2Settings) &&
     (!generatorMode ||
       (isEngineControlled(player1Settings) && isEngineControlled(player2Settings)));
+
+  const startGameRef = useRef(startGame);
+  startGameRef.current = startGame;
+  useEffect(() => {
+    const shouldStartEndgame =
+      !generatorMode &&
+      headers.other?.ChessLabTrainingArea === "endgames" &&
+      headers.other?.ChessLabEndgameAutoStart === "1";
+    if (
+      !shouldStartEndgame ||
+      gameState !== "settingUp" ||
+      !setupIsValid ||
+      isStarting ||
+      endgameAutoStartAttemptedRef.current
+    ) {
+      return;
+    }
+    endgameAutoStartAttemptedRef.current = true;
+    void startGameRef.current();
+  }, [gameState, generatorMode, headers.other, isStarting, setupIsValid]);
 
   function getResignationLosingColor(): "white" | "black" {
     if (isPlayerVsEngine) {
@@ -1171,6 +1241,97 @@ function BoardGame({ generatorMode = false }: { generatorMode?: boolean }) {
     setWhiteTime(null);
     setBlackTime(null);
     resetTree();
+  }
+
+  function prepareEndgamePosition(position: EndgamePosition) {
+    const [chessPosition] = positionFromFen(position.fen);
+    if (!chessPosition) return;
+    const ownerSet = Object.values(trainingAreas.endgames.sets).find((set) =>
+      set.positionIds.includes(position.id),
+    );
+    const nextTree = defaultTree(position.fen);
+    nextTree.headers = {
+      ...nextTree.headers,
+      event: position.title,
+      fen: position.fen,
+      other: {
+        ChessLabTrainingArea: "endgames",
+        ChessLabEndgamePositionId: position.id,
+        ChessLabEndgameSetId: ownerSet?.id ?? "",
+        ChessLabEndgameObjective: position.objective,
+        ChessLabEndgameStudentColor: chessPosition.turn,
+        ChessLabEndgameAutoStart: "1",
+      },
+    };
+    setInputColor(chessPosition.turn);
+    setTreeState(nextTree);
+    setTabs((previous) =>
+      previous.map((tab) =>
+        tab.value === activeTab ? { ...tab, name: position.title, type: "play" } : tab,
+      ),
+    );
+    setGameId(null);
+    setGameState("settingUp");
+    setWhiteTime(null);
+    setBlackTime(null);
+    setResult("*");
+    endgameAutoStartAttemptedRef.current = false;
+    endgameAttemptRecordedRef.current = false;
+  }
+
+  function handleRepeatEndgame() {
+    if (endgamePosition) prepareEndgamePosition(endgamePosition);
+  }
+
+  async function handleReturnToEndgames() {
+    if (gameState === "playing" && gameId) {
+      setIsAborting(true);
+      endgameAttemptRecordedRef.current = true;
+      try {
+        unwrap(await commands.abortGame(gameId));
+        setGameState("gameOver");
+        setResult("*");
+        setGameId(null);
+      } catch (error) {
+        endgameAttemptRecordedRef.current = false;
+        notifications.show({
+          title: "No se pudo cerrar la partida",
+          message:
+            error instanceof Error
+              ? error.message
+              : "La partida sigue activa. Intenta volver nuevamente.",
+          color: "red",
+        });
+        return;
+      } finally {
+        setIsAborting(false);
+      }
+    }
+    await navigate({ to: "/training/endgames" });
+  }
+
+  function handleNextEndgame() {
+    if (!endgamePosition) return;
+    const currentSet = headers.other?.ChessLabEndgameSetId
+      ? trainingAreas.endgames.sets[headers.other.ChessLabEndgameSetId]
+      : undefined;
+    const sourceSets =
+      currentSet?.origin === "user"
+        ? [currentSet]
+        : Object.values(trainingAreas.endgames.sets).filter((set) => set.origin === "bundled");
+    const queue = sourceSets.flatMap((set) =>
+      set.positionIds.flatMap((positionId) => {
+        const position = trainingAreas.endgames.positions[positionId];
+        return position?.theme === endgamePosition.theme || currentSet?.origin === "user"
+          ? position
+            ? [position]
+            : []
+          : [];
+      }),
+    );
+    const currentIndex = queue.findIndex((position) => position.id === endgamePosition.id);
+    const next = queue[(currentIndex + 1) % Math.max(1, queue.length)];
+    if (next) prepareEndgamePosition(next);
   }
 
   function restoreModelGameSource(run: ModelGameRun) {
@@ -1544,105 +1705,192 @@ function BoardGame({ generatorMode = false }: { generatorMode?: boolean }) {
                   </Group>
                 </Stack>
               )}
-              {(gameState === "playing" || gameState === "gameOver") && (
-                <Stack h="100%">
-                  <Box flex={1}>
-                    <GameInfo headers={headers} />
-                    {generatorMode && gameState === "playing" && (
-                      <Group justify="center" mt="sm" gap="xs">
-                        <Loader size="xs" />
-                        <Text size="sm" c="dimmed">
-                          {t("ModelGame.WaitingForMove", {
-                            defaultValue: "Waiting for {{player}}...",
-                            player: pos?.turn === "black" ? headers.black : headers.white,
-                          })}
-                        </Text>
-                      </Group>
-                    )}
-                  </Box>
-                  <Group grow>
-                    {gameState === "playing" && (
+              {(gameState === "playing" || gameState === "gameOver") &&
+                (gameState === "gameOver" && endgamePosition ? (
+                  <Stack h="100%" justify="space-between">
+                    <Stack align="center" justify="center" style={{ flex: 1 }} ta="center">
+                      {endgameSuccess ? (
+                        <IconTrophy size={52} color="var(--mantine-color-teal-6)" />
+                      ) : (
+                        <IconX size={52} color="var(--mantine-color-orange-6)" />
+                      )}
+                      <Text fz="xl" fw={700}>
+                        {endgameSuccess === true
+                          ? "Final completado"
+                          : endgameSuccess === false
+                            ? "Objetivo no alcanzado"
+                            : "Partida finalizada"}
+                      </Text>
+                      <Text c="dimmed" maw={430}>
+                        {endgameSuccess === true
+                          ? "Has conseguido al menos el resultado esperado para este ejercicio."
+                          : endgameSuccess === false
+                            ? "No se pudo conseguir el objetivo de este ejercicio. Puedes intentarlo de nuevo cuando quieras."
+                            : "Este final todavía no tiene un objetivo definido, por lo que el resultado no puede marcarse como completado."}
+                      </Text>
+                      <Paper withBorder p="sm" w="100%" mt="sm">
+                        <Group justify="space-between">
+                          <Text size="sm">Objetivo</Text>
+                          <Text size="sm" fw={600}>
+                            {endgameObjective === "win"
+                              ? "Ganar"
+                              : endgameObjective === "draw"
+                                ? "Mantener tablas"
+                                : endgameObjective === "loss"
+                                  ? "Resistir"
+                                  : "Por definir"}
+                          </Text>
+                        </Group>
+                        <Group justify="space-between" mt="xs">
+                          <Text size="sm">Resultado</Text>
+                          <Text size="sm" fw={600}>
+                            {headers.result}
+                          </Text>
+                        </Group>
+                      </Paper>
+                    </Stack>
+                    <Stack>
+                      {endgameSuccess === true && (
+                        <Button color="teal" leftSection={<IconPlus />} onClick={handleNextEndgame}>
+                          Jugar el siguiente final
+                        </Button>
+                      )}
                       <Button
-                        variant="default"
-                        color="red"
-                        onClick={isEngineVsEngine ? handleAbort : handleResign}
-                        leftSection={<IconX />}
-                        loading={isEngineVsEngine && isAborting}
+                        variant={endgameSuccess === true ? "default" : "light"}
+                        leftSection={<IconRefresh />}
+                        onClick={handleRepeatEndgame}
                       >
-                        {isEngineVsEngine ? "Abort" : "Resign"}
+                        Intentar de nuevo
                       </Button>
-                    )}
-                    {gameState === "gameOver" && !generatorMode && trainingReturn && (
                       <Button
                         variant="default"
-                        onClick={() => void navigate({ to: trainingReturn.to })}
+                        leftSection={<IconZoomCheck />}
+                        onClick={changeToAnalysisMode}
+                      >
+                        Analizar la partida
+                      </Button>
+                      <Button
+                        variant="subtle"
                         leftSection={<IconArrowLeft />}
+                        onClick={() => void handleReturnToEndgames()}
                       >
-                        {trainingReturn.label}
+                        Volver a la lista de finales
                       </Button>
-                    )}
-                    {gameState === "gameOver" && !generatorMode && (
-                      <Button variant="default" onClick={handleNewGame} leftSection={<IconPlus />}>
-                        New Game
-                      </Button>
-                    )}
-                    {gameState === "gameOver" && generatorMode && (
-                      <>
+                    </Stack>
+                  </Stack>
+                ) : (
+                  <Stack h="100%">
+                    <Box flex={1}>
+                      <GameInfo headers={headers} />
+                      {generatorMode && gameState === "playing" && (
+                        <Group justify="center" mt="sm" gap="xs">
+                          <Loader size="xs" />
+                          <Text size="sm" c="dimmed">
+                            {t("ModelGame.WaitingForMove", {
+                              defaultValue: "Waiting for {{player}}...",
+                              player: pos?.turn === "black" ? headers.black : headers.white,
+                            })}
+                          </Text>
+                        </Group>
+                      )}
+                    </Box>
+                    <Group grow>
+                      {gameState === "playing" && endgamePosition && trainingReturn && (
+                        <Button
+                          variant="subtle"
+                          onClick={() => void handleReturnToEndgames()}
+                          leftSection={<IconArrowLeft />}
+                          loading={isAborting}
+                        >
+                          Volver a la lista de finales
+                        </Button>
+                      )}
+                      {gameState === "playing" && (
                         <Button
                           variant="default"
-                          onClick={handleRepeatModelGame}
-                          leftSection={<IconRefresh />}
+                          color="red"
+                          onClick={isEngineVsEngine ? handleAbort : handleResign}
+                          leftSection={<IconX />}
+                          loading={isEngineVsEngine && isAborting}
                         >
-                          {t("ModelGame.Repeat", "Repeat configuration")}
+                          {isEngineVsEngine ? "Abort" : "Resign"}
                         </Button>
+                      )}
+                      {gameState === "gameOver" && !generatorMode && trainingReturn && (
                         <Button
                           variant="default"
-                          onClick={handleEditModelGame}
-                          leftSection={<IconSettings />}
+                          onClick={() => void navigate({ to: trainingReturn.to })}
+                          leftSection={<IconArrowLeft />}
                         >
-                          {t("ModelGame.Edit", "Edit setup")}
+                          {trainingReturn.label}
                         </Button>
-                      </>
-                    )}
-                    <Button
-                      variant="default"
-                      onClick={() => changeToAnalysisMode()}
-                      leftSection={<IconZoomCheck />}
-                    >
-                      Analyze
-                    </Button>
+                      )}
+                      {gameState === "gameOver" && !generatorMode && (
+                        <Button
+                          variant="default"
+                          onClick={handleNewGame}
+                          leftSection={<IconPlus />}
+                        >
+                          New Game
+                        </Button>
+                      )}
+                      {gameState === "gameOver" && generatorMode && (
+                        <>
+                          <Button
+                            variant="default"
+                            onClick={handleRepeatModelGame}
+                            leftSection={<IconRefresh />}
+                          >
+                            {t("ModelGame.Repeat", "Repeat configuration")}
+                          </Button>
+                          <Button
+                            variant="default"
+                            onClick={handleEditModelGame}
+                            leftSection={<IconSettings />}
+                          >
+                            {t("ModelGame.Edit", "Edit setup")}
+                          </Button>
+                        </>
+                      )}
+                      <Button
+                        variant="default"
+                        onClick={() => changeToAnalysisMode()}
+                        leftSection={<IconZoomCheck />}
+                      >
+                        Analyze
+                      </Button>
 
-                    {hasEngine && (
-                      <>
-                        {generatorMode && gameState === "gameOver" ? (
+                      {hasEngine && (
+                        <>
+                          {generatorMode && gameState === "gameOver" ? (
+                            <Button
+                              variant="default"
+                              onClick={exportModelGameArtifacts}
+                              leftSection={<IconFileExport size="1rem" />}
+                            >
+                              {t("ModelGame.Export", "Export PGN + manifest")}
+                            </Button>
+                          ) : !generatorMode ? (
+                            <Button
+                              variant="default"
+                              onClick={exportGameManifest}
+                              leftSection={<IconFileExport size="1rem" />}
+                            >
+                              {t("GameManifest.Export", "Export manifest")}
+                            </Button>
+                          ) : null}
                           <Button
                             variant="default"
-                            onClick={exportModelGameArtifacts}
-                            leftSection={<IconFileExport size="1rem" />}
+                            onClick={() => toggleLogsOpened()}
+                            leftSection={<IconFileText size="1rem" />}
                           >
-                            {t("ModelGame.Export", "Export PGN + manifest")}
+                            Engine Logs
                           </Button>
-                        ) : !generatorMode ? (
-                          <Button
-                            variant="default"
-                            onClick={exportGameManifest}
-                            leftSection={<IconFileExport size="1rem" />}
-                          >
-                            {t("GameManifest.Export", "Export manifest")}
-                          </Button>
-                        ) : null}
-                        <Button
-                          variant="default"
-                          onClick={() => toggleLogsOpened()}
-                          leftSection={<IconFileText size="1rem" />}
-                        >
-                          Engine Logs
-                        </Button>
-                      </>
-                    )}
-                  </Group>
-                </Stack>
-              )}
+                        </>
+                      )}
+                    </Group>
+                  </Stack>
+                ))}
             </>
           )}
           {generatorMode && batchState && (

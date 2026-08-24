@@ -13,21 +13,26 @@ import {
   Select,
   SimpleGrid,
   Stack,
+  Switch,
   Text,
   TextInput,
   Title,
 } from "@mantine/core";
-import { open } from "@tauri-apps/plugin-dialog";
-import { writeTextFile } from "@tauri-apps/plugin-fs";
+import { DragDropContext, Draggable, Droppable, type DropResult } from "@hello-pangea/dnd";
+import { resolve } from "@tauri-apps/api/path";
+import { open, save } from "@tauri-apps/plugin-dialog";
+import { copyFile, writeTextFile } from "@tauri-apps/plugin-fs";
 import {
   IconArrowLeft,
-  IconArrowDown,
-  IconArrowUp,
   IconBook2,
+  IconDownload,
   IconFileSearch,
+  IconGripVertical,
+  IconPencil,
   IconPlus,
   IconPlayerPlay,
   IconSettings,
+  IconTrash,
   IconUpload,
 } from "@tabler/icons-react";
 import { Link, useLoaderData, useNavigate } from "@tanstack/react-router";
@@ -51,10 +56,18 @@ import {
 import {
   addBlankOpeningVariant,
   addOpeningRepertoire,
-  moveOpeningVariant,
+  addOpeningVariantFolder,
+  deleteOpeningLine,
+  getOpeningLineMetrics,
+  getOpeningRepertoireMetrics,
+  getOpeningVariantMetrics,
+  moveOpeningLine,
+  reorderOpeningVariant,
+  renameOpeningLine,
   type OpeningVariant,
   type OpeningRepertoire,
   updateOpeningLineTrainable,
+  updateOpeningPracticeSettings,
   updateOpeningRepertoire,
   updateOpeningVariant,
 } from "@/utils/trainingAreas";
@@ -103,6 +116,9 @@ export default function OpeningDashboardPage() {
   const [variantDraftName, setVariantDraftName] = useState("");
   const [variantDraftType, setVariantDraftType] = useState<OpeningVariant["contentType"]>("theory");
   const [trainableLineIds, setTrainableLineIds] = useState<string[]>([]);
+  const [editingLineId, setEditingLineId] = useState<string | null>(null);
+  const [lineDraftName, setLineDraftName] = useState("");
+  const [deletingLineId, setDeletingLineId] = useState<string | null>(null);
   const repertoires = useMemo(
     () => Object.values(areas.openings.repertoires),
     [areas.openings.repertoires],
@@ -202,32 +218,88 @@ export default function OpeningDashboardPage() {
   async function addVariantFromScratch() {
     if (!variantRepertoireId || !variantName.trim()) return;
     const repertoire = areas.openings.repertoires[variantRepertoireId];
-    if (!repertoire || repertoire.sourcePath !== repertoire.path) return;
+    if (!repertoire) return;
     setBusy(true);
     try {
       const name = variantName.trim();
-      const orientation = repertoire.color === "black" ? "black" : "white";
-      const pgn = `${headersToPGN({
-        id: repertoire.recordCount,
-        fen: INITIAL_FEN,
-        black: "",
-        white: "",
-        result: "*",
-        event: name,
-        site: "",
-        orientation,
-      })}\n*`;
-      await writeTextFile(repertoire.path, `\n\n${pgn}\n`, { append: true });
-      setAreas((previous) => ({
-        ...previous,
-        openings: addBlankOpeningVariant(previous.openings, variantRepertoireId, name),
-      }));
+      const openings =
+        repertoire.sourcePath === repertoire.path
+          ? addBlankOpeningVariant(areas.openings, variantRepertoireId, name)
+          : addOpeningVariantFolder(areas.openings, variantRepertoireId, name);
+      await persistOpeningOrganization(openings, repertoire.id);
       setVariantName("");
       setVariantRepertoireId(null);
       setFeedback({ text: `Variante «${name}» añadida a ${repertoire.name}.` });
     } catch (error) {
       setFeedback({
         text: error instanceof Error ? error.message : "No se pudo añadir la variante.",
+        color: "red",
+      });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function persistOpeningOrganization(openings: typeof areas.openings, repertoireId: string) {
+    const repertoire = openings.repertoires[repertoireId];
+    if (!repertoire) return;
+    const pgn = await buildOpeningTrainingPgn(openings, repertoireId);
+    await writeTextFile(repertoire.path, pgn);
+    setAreas({ ...areas, openings });
+  }
+
+  async function handleOpeningDrag(result: DropResult) {
+    if (!result.destination) return;
+    let openings = areas.openings;
+    let repertoireId: string | undefined;
+    if (result.type.startsWith("VARIANT:")) {
+      repertoireId = result.type.slice("VARIANT:".length);
+      openings = reorderOpeningVariant(
+        openings,
+        repertoireId,
+        result.source.index,
+        result.destination.index,
+      );
+    } else if (result.type === "LINE") {
+      const sourceVariantId = result.source.droppableId.replace("lines:", "");
+      const targetVariantId = result.destination.droppableId.replace("lines:", "");
+      const sourceVariant = openings.variants[sourceVariantId];
+      const lineId = sourceVariant?.lineIds[result.source.index];
+      if (!sourceVariant || !lineId) return;
+      repertoireId = sourceVariant.repertoireId;
+      openings = moveOpeningLine(openings, lineId, targetVariantId, result.destination.index);
+    }
+    if (!repertoireId || openings === areas.openings) return;
+    setBusy(true);
+    setFeedback(null);
+    try {
+      await persistOpeningOrganization(openings, repertoireId);
+    } catch (error) {
+      setFeedback({
+        text: error instanceof Error ? error.message : "No se pudo reorganizar el repertorio.",
+        color: "red",
+      });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function confirmDeleteLine() {
+    if (!deletingLineId) return;
+    const line = areas.openings.lines[deletingLineId];
+    const variant = line ? areas.openings.variants[line.variantId] : undefined;
+    if (!line || !variant) return;
+    setBusy(true);
+    try {
+      const openings = deleteOpeningLine(areas.openings, line.id);
+      await persistOpeningOrganization(openings, variant.repertoireId);
+      setDeletingLineId(null);
+      setFeedback({
+        text: `Línea «${line.name}» eliminada del gestor; el PGN fuente sigue intacto.`,
+      });
+    } catch (error) {
+      setFeedback({
+        text: error instanceof Error ? error.message : "No se pudo eliminar la línea.",
         color: "red",
       });
     } finally {
@@ -245,7 +317,7 @@ export default function OpeningDashboardPage() {
       }
       const repertoireName = name.trim() || filename(inspection.path);
       const created = await createFile({
-        filename: `${repertoireName} - Entrenamiento`,
+        filename: `${repertoireName} - Editable`,
         filetype: "repertoire",
         pgn: prepared.trainingPgn,
         dir: documentDir,
@@ -332,19 +404,12 @@ export default function OpeningDashboardPage() {
           variantDraftType === "theory" && trainableLineIds.includes(lineId),
         );
       }
-      if (repertoire.sourcePath !== repertoire.path) {
-        const pgn = await buildOpeningTrainingPgn(openings, repertoire.id);
-        await writeTextFile(repertoire.path, pgn);
-      }
-      setAreas({ ...areas, openings });
+      await persistOpeningOrganization(openings, repertoire.id);
       setEditingVariantId(null);
       setFeedback({ text: `Configuración de «${variantDraftName.trim()}» guardada.` });
     } catch (error) {
       setFeedback({
-        text:
-          error instanceof Error
-            ? error.message
-            : "No se pudo actualizar el archivo de entrenamiento.",
+        text: error instanceof Error ? error.message : "No se pudo actualizar la copia editable.",
         color: "red",
       });
     } finally {
@@ -360,24 +425,34 @@ export default function OpeningDashboardPage() {
     const variant = areas.openings.variants[variantId];
     if (!variant) return false;
     try {
-      const analysis = mode === "analysis";
       await navigate({ to: "/" });
       await openFile(
         {
           type: "file",
           name: `${repertoire.name} · ${variant.name}`,
-          path: analysis ? repertoire.sourcePath : repertoire.path,
-          numGames: analysis ? repertoire.recordCount : repertoire.variantIds.length,
-          metadata: { type: analysis ? "game" : "repertoire", tags: [] },
+          path: repertoire.path,
+          numGames: repertoire.variantIds.length,
+          metadata: { type: "repertoire", tags: [] },
           lastModified: Date.now(),
         },
         setTabs,
         setActiveTab,
         {
-          gameNumber: analysis ? variant.sourceRecordIndex : variant.trainingRecordIndex,
+          gameNumber: variant.trainingRecordIndex,
         },
       );
       if (mode !== "analysis") setPracticeUnit("line");
+      if (mode === "practice") {
+        const lineIds = variant.lineIds.filter((lineId) => areas.openings.lines[lineId]?.trainable);
+        setPracticeTab("train");
+        setOpeningPracticeQueue({
+          gameNumbers: lineIds.map(() => variant.trainingRecordIndex),
+          currentIndex: 0,
+          repertoireId: repertoire.id,
+          variantIds: lineIds.map(() => variant.id),
+          lineIds,
+        });
+      }
       if (mode === "build") setPracticeTab("build");
       return true;
     } catch (error) {
@@ -395,20 +470,61 @@ export default function OpeningDashboardPage() {
   async function openRepertoirePractice(repertoire: OpeningRepertoire) {
     const variants = repertoire.variantIds
       .map((id) => areas.openings.variants[id])
-      .filter((variant): variant is NonNullable<typeof variant> => {
-        if (!variant || variant.contentType !== "theory") return false;
-        if (repertoire.sourcePath === repertoire.path) return true;
-        return variant.lineIds.some((lineId) => areas.openings.lines[lineId]?.trainable);
-      });
-    if (variants.length === 0) {
-      setFeedback({ text: "Este repertorio no tiene variantes entrenables.", color: "yellow" });
+      .filter((variant): variant is NonNullable<typeof variant> =>
+        Boolean(variant && variant.contentType === "theory"),
+      );
+    const entries = variants.flatMap((variant) =>
+      variant.lineIds
+        .filter((lineId) => areas.openings.lines[lineId]?.trainable)
+        .map((lineId) => ({ variant, lineId })),
+    );
+    if (entries.length === 0) {
+      setFeedback({ text: "Este repertorio no tiene líneas entrenables.", color: "yellow" });
       return;
     }
-    const opened = await openVariant(repertoire, variants[0].id, "practice");
+    const opened = await openVariant(repertoire, entries[0].variant.id, "practice");
     if (!opened) return;
     setOpeningPracticeQueue({
-      gameNumbers: variants.map((variant) => variant.trainingRecordIndex),
+      gameNumbers: entries.map(({ variant }) => variant.trainingRecordIndex),
       currentIndex: 0,
+      repertoireId: repertoire.id,
+      variantIds: entries.map(({ variant }) => variant.id),
+      lineIds: entries.map(({ lineId }) => lineId),
+    });
+  }
+
+  async function exportWorkingCopy(repertoire: OpeningRepertoire) {
+    try {
+      const defaultPath = await resolve(documentDir, `${repertoire.name} - editable.pgn`);
+      const target = await save({
+        defaultPath,
+        filters: [{ name: "Portable Game Notation", extensions: ["pgn"] }],
+      });
+      if (!target) return;
+      const outputPath = target.toLowerCase().endsWith(".pgn") ? target : `${target}.pgn`;
+      if (outputPath !== repertoire.path) await copyFile(repertoire.path, outputPath);
+      setFeedback({ text: `Copia editable de «${repertoire.name}» exportada.` });
+    } catch (error) {
+      setFeedback({
+        text: error instanceof Error ? error.message : "No se pudo exportar la copia editable.",
+        color: "red",
+      });
+    }
+  }
+
+  async function openLinePractice(
+    repertoire: OpeningRepertoire,
+    variant: OpeningVariant,
+    lineId: string,
+  ) {
+    const opened = await openVariant(repertoire, variant.id, "practice");
+    if (!opened) return;
+    setOpeningPracticeQueue({
+      gameNumbers: [variant.trainingRecordIndex],
+      currentIndex: 0,
+      repertoireId: repertoire.id,
+      variantIds: [variant.id],
+      lineIds: [lineId],
     });
   }
 
@@ -502,8 +618,8 @@ export default function OpeningDashboardPage() {
               <div>
                 <Text fw={600}>Importar repertorio PGN</Text>
                 <Text size="sm" c="dimmed">
-                  Revisa el archivo y elige qué ramas quieres practicar. El contenido original se
-                  conservará para consultarlo y analizarlo.
+                  Revisa el archivo y elige qué ramas quieres practicar. Se creará una copia
+                  editable completa; el archivo original permanecerá intacto.
                 </Text>
               </div>
             </Group>
@@ -534,10 +650,43 @@ export default function OpeningDashboardPage() {
         </Card>
 
         <div style={{ order: 1 }}>
-          <Title order={3}>Mis repertorios</Title>
-          <Text size="sm" c="dimmed">
-            Consulta tus repertorios, practica sus líneas o continúa construyéndolos en el tablero.
-          </Text>
+          <Group justify="space-between" align="flex-end" wrap="wrap">
+            <div>
+              <Title order={3}>Mis repertorios</Title>
+              <Text size="sm" c="dimmed">
+                Consulta tus repertorios, practica sus líneas o continúa construyéndolos en el
+                tablero.
+              </Text>
+            </div>
+            <Stack gap="xs">
+              <Switch
+                label="Evaluar jugadas buenas fuera del repertorio"
+                description="Usa el motor de referencia; desactivado aplica el repertorio estrictamente."
+                checked={areas.openings.settings.evaluateOutsideRepertoire}
+                onChange={(event) =>
+                  setAreas((previous) => ({
+                    ...previous,
+                    openings: updateOpeningPracticeSettings(previous.openings, {
+                      evaluateOutsideRepertoire: event.currentTarget.checked,
+                    }),
+                  }))
+                }
+              />
+              <Switch
+                label="Preguntar dificultad al terminar cada línea"
+                description="Desactívalo para calcularla automáticamente con errores y tiempo."
+                checked={areas.openings.settings.askLineDifficulty}
+                onChange={(event) =>
+                  setAreas((previous) => ({
+                    ...previous,
+                    openings: updateOpeningPracticeSettings(previous.openings, {
+                      askLineDifficulty: event.currentTarget.checked,
+                    }),
+                  }))
+                }
+              />
+            </Stack>
+          </Group>
         </div>
 
         {repertoires.length === 0 ? (
@@ -548,72 +697,91 @@ export default function OpeningDashboardPage() {
             </Stack>
           </Card>
         ) : (
-          <Accordion variant="separated" multiple>
-            {repertoires.map((repertoire) => {
-              const variants = repertoire.variantIds
-                .map((id) => areas.openings.variants[id])
-                .filter((variant): variant is NonNullable<typeof variant> => Boolean(variant));
-              const lineCount = variants.reduce((sum, variant) => sum + variant.lineIds.length, 0);
-              const modelGameCount = variants.filter(
-                (variant) => variant.contentType === "modelGame",
-              ).length;
-              const editableFromScratch = repertoire.sourcePath === repertoire.path;
-              return (
-                <Accordion.Item key={repertoire.id} value={repertoire.id}>
-                  <Accordion.Control>
-                    <Group justify="space-between" wrap="nowrap" pr="md">
-                      <div>
-                        <Text fw={600}>{repertoire.name}</Text>
-                        <Text size="sm" c="dimmed">
-                          {variants.length} variantes ·{" "}
-                          {editableFromScratch ? "editable en tablero" : `${lineCount} líneas`}
-                          {modelGameCount > 0 ? ` · ${modelGameCount} partidas modelo` : ""}
-                        </Text>
-                      </div>
-                      <Group gap="xs">
-                        <Badge color="blue" variant="light">
-                          {repertoire.color === "both"
-                            ? "Ambos"
-                            : repertoire.color === "white"
-                              ? "Blancas"
-                              : "Negras"}
-                        </Badge>
-                        <Badge variant="outline">
-                          {repertoire.subvariationPolicy === "all"
-                            ? "Todas las ramas"
-                            : "Líneas principales"}
-                        </Badge>
+          <DragDropContext onDragEnd={(result) => void handleOpeningDrag(result)}>
+            <Accordion variant="separated" multiple>
+              {repertoires.map((repertoire) => {
+                const variants = repertoire.variantIds
+                  .map((id) => areas.openings.variants[id])
+                  .filter((variant): variant is NonNullable<typeof variant> => Boolean(variant));
+                const lineCount = variants.reduce(
+                  (sum, variant) => sum + variant.lineIds.length,
+                  0,
+                );
+                const modelGameCount = variants.filter(
+                  (variant) => variant.contentType === "modelGame",
+                ).length;
+                const repertoireMetrics = getOpeningRepertoireMetrics(
+                  areas.openings,
+                  repertoire.id,
+                );
+                return (
+                  <Accordion.Item key={repertoire.id} value={repertoire.id}>
+                    <Accordion.Control>
+                      <Group justify="space-between" wrap="nowrap" pr="md">
+                        <div>
+                          <Text fw={600}>{repertoire.name}</Text>
+                          <Text size="sm" c="dimmed">
+                            {variants.length} variantes · {lineCount} líneas · copia editable
+                            {modelGameCount > 0 ? ` · ${modelGameCount} partidas modelo` : ""}
+                          </Text>
+                        </div>
+                        <Group gap="xs">
+                          <Badge color="blue" variant="light">
+                            {repertoire.color === "both"
+                              ? "Ambos"
+                              : repertoire.color === "white"
+                                ? "Blancas"
+                                : "Negras"}
+                          </Badge>
+                          <Badge variant="outline">
+                            {repertoire.subvariationPolicy === "all"
+                              ? "Todas las ramas"
+                              : "Líneas principales"}
+                          </Badge>
+                          <Badge color="teal" variant="light">
+                            Progreso {repertoireMetrics.progress}%
+                          </Badge>
+                          <Badge color="orange" variant="light">
+                            Dificultad {repertoireMetrics.difficulty}%
+                          </Badge>
+                        </Group>
                       </Group>
-                    </Group>
-                  </Accordion.Control>
-                  <Accordion.Panel>
-                    <Group justify="space-between" mb="md">
-                      {repertoire.description ? (
-                        <Text size="sm" c="dimmed">
-                          {repertoire.description}
-                        </Text>
-                      ) : (
-                        <span />
-                      )}
-                      <Group gap="xs">
-                        <Button
-                          size="xs"
-                          color="blue"
-                          variant="light"
-                          leftSection={<IconPlayerPlay size={14} />}
-                          onClick={() => openRepertoirePractice(repertoire)}
-                        >
-                          Practicar repertorio
-                        </Button>
-                        <Button
-                          size="xs"
-                          variant="default"
-                          leftSection={<IconSettings size={14} />}
-                          onClick={() => openRepertoireSettings(repertoire)}
-                        >
-                          Editar repertorio
-                        </Button>
-                        {repertoire.sourcePath === repertoire.path && (
+                    </Accordion.Control>
+                    <Accordion.Panel>
+                      <Group justify="space-between" mb="md">
+                        {repertoire.description ? (
+                          <Text size="sm" c="dimmed">
+                            {repertoire.description}
+                          </Text>
+                        ) : (
+                          <span />
+                        )}
+                        <Group gap="xs">
+                          <Button
+                            size="xs"
+                            color="blue"
+                            variant="light"
+                            leftSection={<IconPlayerPlay size={14} />}
+                            onClick={() => openRepertoirePractice(repertoire)}
+                          >
+                            Practicar repertorio
+                          </Button>
+                          <Button
+                            size="xs"
+                            variant="default"
+                            leftSection={<IconDownload size={14} />}
+                            onClick={() => void exportWorkingCopy(repertoire)}
+                          >
+                            Exportar copia
+                          </Button>
+                          <Button
+                            size="xs"
+                            variant="default"
+                            leftSection={<IconSettings size={14} />}
+                            onClick={() => openRepertoireSettings(repertoire)}
+                          >
+                            Editar repertorio
+                          </Button>
                           <Button
                             size="xs"
                             variant="light"
@@ -622,135 +790,308 @@ export default function OpeningDashboardPage() {
                           >
                             Añadir variante
                           </Button>
-                        )}
+                        </Group>
                       </Group>
-                    </Group>
-                    <ScrollArea h={Math.min(520, Math.max(160, variants.length * 112))}>
-                      <Stack gap="xs" pr="sm">
-                        {variants.map((variant, variantIndex) => {
-                          const lines = variant.lineIds
-                            .map((id) => areas.openings.lines[id])
-                            .filter((line): line is NonNullable<typeof line> => Boolean(line));
-                          const trainable = lines.filter((line) => line.trainable).length;
-                          return (
-                            <Card key={variant.id} withBorder padding="sm">
-                              <Group justify="space-between" wrap="nowrap" align="flex-start">
-                                <div style={{ minWidth: 0 }}>
-                                  <Group gap="xs">
-                                    <Text fw={500} truncate>
-                                      {variant.name}
-                                    </Text>
-                                    {variant.contentType === "modelGame" && (
-                                      <Badge color="violet" size="sm">
-                                        Partida modelo
-                                      </Badge>
+                      <ScrollArea
+                        h={Math.min(
+                          680,
+                          Math.max(
+                            300,
+                            variants.reduce(
+                              (height, variant) =>
+                                height + 112 + Math.min(variant.lineIds.length, 8) * 52,
+                              0,
+                            ),
+                          ),
+                        )}
+                        type="auto"
+                        offsetScrollbars
+                      >
+                        <Droppable
+                          droppableId={`variants:${repertoire.id}`}
+                          type={`VARIANT:${repertoire.id}`}
+                        >
+                          {(variantDrop) => (
+                            <Stack
+                              gap="xs"
+                              pr="sm"
+                              ref={variantDrop.innerRef}
+                              {...variantDrop.droppableProps}
+                            >
+                              {variants.map((variant, variantIndex) => {
+                                const lines = variant.lineIds
+                                  .map((id) => areas.openings.lines[id])
+                                  .filter((line): line is NonNullable<typeof line> =>
+                                    Boolean(line),
+                                  );
+                                const trainable = lines.filter((line) => line.trainable).length;
+                                const variantMetrics = getOpeningVariantMetrics(
+                                  areas.openings,
+                                  variant.id,
+                                );
+                                return (
+                                  <Draggable
+                                    key={variant.id}
+                                    draggableId={variant.id}
+                                    index={variantIndex}
+                                    isDragDisabled={busy}
+                                  >
+                                    {(variantDrag) => (
+                                      <Card
+                                        withBorder
+                                        padding="sm"
+                                        ref={variantDrag.innerRef}
+                                        {...variantDrag.draggableProps}
+                                      >
+                                        <Group
+                                          justify="space-between"
+                                          wrap="nowrap"
+                                          align="flex-start"
+                                        >
+                                          <ActionIcon
+                                            variant="subtle"
+                                            color="gray"
+                                            aria-label="Arrastrar variante"
+                                            {...variantDrag.dragHandleProps}
+                                          >
+                                            <IconGripVertical size={17} />
+                                          </ActionIcon>
+                                          <div style={{ minWidth: 0 }}>
+                                            <Group gap="xs">
+                                              <Text fw={500} truncate>
+                                                {variant.name}
+                                              </Text>
+                                              {variant.contentType === "modelGame" && (
+                                                <Badge color="violet" size="sm">
+                                                  Partida modelo
+                                                </Badge>
+                                              )}
+                                              <Badge color="teal" size="sm" variant="light">
+                                                {variantMetrics.progress}%
+                                              </Badge>
+                                              <Badge color="orange" size="sm" variant="light">
+                                                Dif. {variantMetrics.difficulty}%
+                                              </Badge>
+                                            </Group>
+                                            <Text size="xs" c="dimmed">
+                                              {`${lines.length} líneas · ${variant.commentCount} comentarios`}
+                                              {variant.hasVariations
+                                                ? " · contiene subvariantes"
+                                                : ""}
+                                            </Text>
+                                          </div>
+                                          <Group gap="xs" wrap="nowrap">
+                                            <ActionIcon
+                                              size="lg"
+                                              variant="subtle"
+                                              aria-label="Configurar variante"
+                                              onClick={() => openVariantSettings(variant)}
+                                            >
+                                              <IconSettings size={16} />
+                                            </ActionIcon>
+                                            <Button
+                                              size="xs"
+                                              variant="default"
+                                              leftSection={<IconFileSearch size={14} />}
+                                              onClick={() =>
+                                                openVariant(repertoire, variant.id, "analysis")
+                                              }
+                                            >
+                                              Editar y analizar
+                                            </Button>
+                                            {variant.contentType === "theory" && (
+                                              <Button
+                                                size="xs"
+                                                variant="default"
+                                                leftSection={<IconPlus size={14} />}
+                                                onClick={() =>
+                                                  openVariant(repertoire, variant.id, "build")
+                                                }
+                                              >
+                                                Añadir línea
+                                              </Button>
+                                            )}
+                                            <Button
+                                              size="xs"
+                                              color="blue"
+                                              variant="light"
+                                              disabled={
+                                                variant.contentType === "modelGame" ||
+                                                trainable === 0
+                                              }
+                                              leftSection={<IconPlayerPlay size={14} />}
+                                              onClick={() =>
+                                                openVariant(repertoire, variant.id, "practice")
+                                              }
+                                            >
+                                              Practicar
+                                            </Button>
+                                          </Group>
+                                        </Group>
+                                        <Droppable droppableId={`lines:${variant.id}`} type="LINE">
+                                          {(lineDrop) => (
+                                            <Stack
+                                              gap={5}
+                                              mt="sm"
+                                              ref={lineDrop.innerRef}
+                                              {...lineDrop.droppableProps}
+                                            >
+                                              {lines.map((line, lineIndex) => {
+                                                const lineMetrics = getOpeningLineMetrics(line);
+                                                return (
+                                                  <Draggable
+                                                    key={line.id}
+                                                    draggableId={line.id}
+                                                    index={lineIndex}
+                                                    isDragDisabled={busy}
+                                                  >
+                                                    {(lineDrag) => (
+                                                      <Card
+                                                        padding="xs"
+                                                        withBorder
+                                                        ref={lineDrag.innerRef}
+                                                        {...lineDrag.draggableProps}
+                                                      >
+                                                        <Group
+                                                          justify="space-between"
+                                                          wrap="nowrap"
+                                                        >
+                                                          <Group
+                                                            gap="xs"
+                                                            wrap="nowrap"
+                                                            style={{ minWidth: 0 }}
+                                                          >
+                                                            <ActionIcon
+                                                              size="sm"
+                                                              variant="subtle"
+                                                              color="gray"
+                                                              aria-label="Arrastrar línea"
+                                                              {...lineDrag.dragHandleProps}
+                                                            >
+                                                              <IconGripVertical size={14} />
+                                                            </ActionIcon>
+                                                            <div style={{ minWidth: 0 }}>
+                                                              <Text size="sm" fw={500} truncate>
+                                                                {line.name}
+                                                              </Text>
+                                                              <Text size="xs" c="dimmed">
+                                                                {line.plyCount} plies · progreso{" "}
+                                                                {lineMetrics.progress}% · dificultad{" "}
+                                                                {lineMetrics.difficulty}%
+                                                              </Text>
+                                                            </div>
+                                                          </Group>
+                                                          <Group gap={4} wrap="nowrap">
+                                                            <Checkbox
+                                                              size="xs"
+                                                              label="Entrenar"
+                                                              checked={line.trainable}
+                                                              disabled={
+                                                                variant.contentType ===
+                                                                  "modelGame" || busy
+                                                              }
+                                                              onChange={async (event) => {
+                                                                const openings =
+                                                                  updateOpeningLineTrainable(
+                                                                    areas.openings,
+                                                                    line.id,
+                                                                    event.currentTarget.checked,
+                                                                  );
+                                                                setBusy(true);
+                                                                try {
+                                                                  await persistOpeningOrganization(
+                                                                    openings,
+                                                                    repertoire.id,
+                                                                  );
+                                                                } catch (error) {
+                                                                  setFeedback({
+                                                                    text:
+                                                                      error instanceof Error
+                                                                        ? error.message
+                                                                        : "No se pudo actualizar la copia editable.",
+                                                                    color: "red",
+                                                                  });
+                                                                } finally {
+                                                                  setBusy(false);
+                                                                }
+                                                              }}
+                                                            />
+                                                            <ActionIcon
+                                                              size="sm"
+                                                              color="blue"
+                                                              variant="light"
+                                                              aria-label={`Practicar ${line.name}`}
+                                                              disabled={
+                                                                variant.contentType ===
+                                                                  "modelGame" ||
+                                                                !line.trainable ||
+                                                                busy
+                                                              }
+                                                              onClick={() =>
+                                                                void openLinePractice(
+                                                                  repertoire,
+                                                                  variant,
+                                                                  line.id,
+                                                                )
+                                                              }
+                                                            >
+                                                              <IconPlayerPlay size={14} />
+                                                            </ActionIcon>
+                                                            <ActionIcon
+                                                              size="sm"
+                                                              variant="subtle"
+                                                              aria-label="Renombrar línea"
+                                                              onClick={() => {
+                                                                setEditingLineId(line.id);
+                                                                setLineDraftName(line.name);
+                                                              }}
+                                                            >
+                                                              <IconPencil size={14} />
+                                                            </ActionIcon>
+                                                            <ActionIcon
+                                                              size="sm"
+                                                              color="red"
+                                                              variant="subtle"
+                                                              aria-label="Eliminar línea"
+                                                              onClick={() =>
+                                                                setDeletingLineId(line.id)
+                                                              }
+                                                            >
+                                                              <IconTrash size={14} />
+                                                            </ActionIcon>
+                                                          </Group>
+                                                        </Group>
+                                                      </Card>
+                                                    )}
+                                                  </Draggable>
+                                                );
+                                              })}
+                                              {lineDrop.placeholder}
+                                              {lines.length === 0 && (
+                                                <Text size="xs" c="dimmed" ta="center" py={4}>
+                                                  Construye una línea en el tablero o suelta aquí
+                                                  una línea de otra variante.
+                                                </Text>
+                                              )}
+                                            </Stack>
+                                          )}
+                                        </Droppable>
+                                      </Card>
                                     )}
-                                  </Group>
-                                  <Text size="xs" c="dimmed">
-                                    {editableFromScratch && lines.length === 0
-                                      ? "Contenido editable en el tablero"
-                                      : `${lines.length} líneas · ${variant.commentCount} comentarios`}
-                                    {variant.hasVariations ? " · contiene subvariantes" : ""}
-                                  </Text>
-                                  {lines.length > 0 && (
-                                    <Text size="xs" c="dimmed" mt={4} lineClamp={1}>
-                                      {lines
-                                        .slice(0, 3)
-                                        .map((line) => line.name)
-                                        .join(" · ")}
-                                    </Text>
-                                  )}
-                                </div>
-                                <Group gap="xs" wrap="nowrap">
-                                  <ActionIcon
-                                    size="lg"
-                                    variant="subtle"
-                                    disabled={variantIndex === 0}
-                                    aria-label="Subir variante"
-                                    onClick={() =>
-                                      setAreas((previous) => ({
-                                        ...previous,
-                                        openings: moveOpeningVariant(
-                                          previous.openings,
-                                          repertoire.id,
-                                          variant.id,
-                                          "up",
-                                        ),
-                                      }))
-                                    }
-                                  >
-                                    <IconArrowUp size={16} />
-                                  </ActionIcon>
-                                  <ActionIcon
-                                    size="lg"
-                                    variant="subtle"
-                                    disabled={variantIndex === variants.length - 1}
-                                    aria-label="Bajar variante"
-                                    onClick={() =>
-                                      setAreas((previous) => ({
-                                        ...previous,
-                                        openings: moveOpeningVariant(
-                                          previous.openings,
-                                          repertoire.id,
-                                          variant.id,
-                                          "down",
-                                        ),
-                                      }))
-                                    }
-                                  >
-                                    <IconArrowDown size={16} />
-                                  </ActionIcon>
-                                  <ActionIcon
-                                    size="lg"
-                                    variant="subtle"
-                                    aria-label="Configurar variante"
-                                    onClick={() => openVariantSettings(variant)}
-                                  >
-                                    <IconSettings size={16} />
-                                  </ActionIcon>
-                                  <Button
-                                    size="xs"
-                                    variant="default"
-                                    leftSection={<IconFileSearch size={14} />}
-                                    onClick={() => openVariant(repertoire, variant.id, "analysis")}
-                                  >
-                                    Analizar
-                                  </Button>
-                                  {editableFromScratch && (
-                                    <Button
-                                      size="xs"
-                                      variant="default"
-                                      leftSection={<IconPlus size={14} />}
-                                      onClick={() => openVariant(repertoire, variant.id, "build")}
-                                    >
-                                      Construir
-                                    </Button>
-                                  )}
-                                  <Button
-                                    size="xs"
-                                    color="blue"
-                                    variant="light"
-                                    disabled={
-                                      variant.contentType === "modelGame" ||
-                                      (!editableFromScratch && trainable === 0)
-                                    }
-                                    leftSection={<IconPlayerPlay size={14} />}
-                                    onClick={() => openVariant(repertoire, variant.id, "practice")}
-                                  >
-                                    Practicar
-                                  </Button>
-                                </Group>
-                              </Group>
-                            </Card>
-                          );
-                        })}
-                      </Stack>
-                    </ScrollArea>
-                  </Accordion.Panel>
-                </Accordion.Item>
-              );
-            })}
-          </Accordion>
+                                  </Draggable>
+                                );
+                              })}
+                              {variantDrop.placeholder}
+                            </Stack>
+                          )}
+                        </Droppable>
+                      </ScrollArea>
+                    </Accordion.Panel>
+                  </Accordion.Item>
+                );
+              })}
+            </Accordion>
+          </DragDropContext>
         )}
       </Stack>
 
@@ -772,8 +1113,8 @@ export default function OpeningDashboardPage() {
             </Alert>
             <OpeningConfigFields config={config} onChange={setConfig} />
             <Text size="xs" c="dimmed">
-              Cambiar esta política no elimina ramas del archivo original. Solo determina qué árbol
-              se copia al archivo de entrenamiento.
+              Esta política solo decide qué líneas empiezan marcadas para entrenar. La copia
+              editable conserva todas las ramas y el archivo original no se modifica.
             </Text>
             <ScrollArea h={260} type="auto" offsetScrollbars>
               <Stack gap="xs" pr="sm">
@@ -830,8 +1171,8 @@ export default function OpeningDashboardPage() {
             data-autofocus
           />
           <Text size="xs" c="dimmed">
-            Se creará un capítulo vacío. Después podrás abrirlo con “Construir” y añadir sus líneas
-            directamente en el tablero.
+            Se creará un capítulo vacío en la copia editable. Podrás construir sus líneas
+            directamente con el tablero o mover líneas existentes hasta él.
           </Text>
           <Group justify="flex-end">
             <Button variant="default" onClick={() => setVariantRepertoireId(null)}>
@@ -844,6 +1185,62 @@ export default function OpeningDashboardPage() {
               onClick={addVariantFromScratch}
             >
               Añadir variante
+            </Button>
+          </Group>
+        </Stack>
+      </Modal>
+
+      <Modal
+        opened={editingLineId !== null}
+        onClose={() => setEditingLineId(null)}
+        title="Renombrar línea"
+        size="sm"
+      >
+        <Stack>
+          <TextInput
+            label="Nombre"
+            value={lineDraftName}
+            onChange={(event) => setLineDraftName(event.currentTarget.value)}
+            data-autofocus
+          />
+          <Group justify="flex-end">
+            <Button variant="default" onClick={() => setEditingLineId(null)}>
+              Cancelar
+            </Button>
+            <Button
+              disabled={!lineDraftName.trim()}
+              onClick={() => {
+                if (!editingLineId) return;
+                setAreas((previous) => ({
+                  ...previous,
+                  openings: renameOpeningLine(previous.openings, editingLineId, lineDraftName),
+                }));
+                setEditingLineId(null);
+              }}
+            >
+              Guardar
+            </Button>
+          </Group>
+        </Stack>
+      </Modal>
+
+      <Modal
+        opened={deletingLineId !== null}
+        onClose={() => !busy && setDeletingLineId(null)}
+        title="Eliminar línea del gestor"
+        size="sm"
+      >
+        <Stack>
+          <Text size="sm">
+            La línea dejará de aparecer y de entrenarse. Esta acción no elimina ni reescribe el PGN
+            fuente importado.
+          </Text>
+          <Group justify="flex-end">
+            <Button variant="default" disabled={busy} onClick={() => setDeletingLineId(null)}>
+              Cancelar
+            </Button>
+            <Button color="red" loading={busy} onClick={confirmDeleteLine}>
+              Eliminar del gestor
             </Button>
           </Group>
         </Stack>
@@ -912,8 +1309,8 @@ export default function OpeningDashboardPage() {
                     Líneas que se incluirán al entrenar
                   </Text>
                   <Text size="xs" c="dimmed">
-                    Esta selección solo reconstruye la copia de entrenamiento; el PGN fuente no se
-                    modifica.
+                    Esta selección cambia la cola de práctica sin eliminar ramas de la copia
+                    editable; el PGN fuente no se modifica.
                   </Text>
                 </div>
                 <ScrollArea h={260} type="auto" offsetScrollbars>

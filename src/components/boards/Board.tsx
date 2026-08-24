@@ -22,6 +22,7 @@ import { match } from "ts-pattern";
 import { useStore } from "zustand";
 import { useShallow } from "zustand/react/shallow";
 import { Chessground, type ChessgroundRef } from "@/chessground/Chessground";
+import type { BestMoves } from "@/bindings";
 import {
   autoPromoteAtom,
   bestMovesFamily,
@@ -39,7 +40,7 @@ import {
   moveInputAtom,
   practiceCardStartTimeAtom,
   practiceSessionStatsAtom,
-  practiceStateAtom,
+  practiceStateFamily,
   showArrowsAtom,
   showConsecutiveArrowsAtom,
   showCoordinatesAtom,
@@ -48,15 +49,16 @@ import {
   snapArrowsAtom,
 } from "@/state/atoms";
 import { keyMapAtom } from "@/state/keybinds";
+import { trainingAreasAtom } from "@/state/trainingAreas";
 import classes from "@/styles/Chessboard.module.css";
 import { ANNOTATION_INFO, isBasicAnnotation } from "@/utils/annotation";
 import { getVariationLine } from "@/utils/chess";
 import { chessopsError, forceEnPassant, positionFromFen } from "@/utils/chessops";
-import { getBestMoves, killEngine, type LocalEngine } from "@/utils/engines";
+import { getBestMovesOnce, type LocalEngine } from "@/utils/engines";
 import { isMaiaEngine } from "@/utils/humanBots";
-import { acceptsOpeningDeviation } from "@/utils/openingTraining";
+import { classifyOpeningMove } from "@/utils/openingTraining";
+import { recordOpeningMoveAttempt } from "@/utils/trainingAreas";
 import { getTabFile, getTabGameNumber } from "@/utils/tabs";
-import { genID } from "@/utils/tabs";
 import ShowMaterial from "../common/ShowMaterial";
 import { TreeStateContext } from "../common/TreeStateContext";
 import FideInfo from "../databases/FideInfo";
@@ -154,8 +156,6 @@ function Board({
   }
 
   const [pendingMove, setPendingMove] = useState<NormalMove | null>(null);
-  const [classifyingDeviation, setClassifyingDeviation] = useState(false);
-  const deviationEvaluatorId = useState(() => genID())[0];
   const storedEngines = useAtomValue(enginesAtom);
   const engines = useMemo(() => storedEngines ?? [], [storedEngines]);
 
@@ -171,6 +171,7 @@ function Board({
   const keyMap = useAtomValue(keyMapAtom);
   useHotkeys(keyMap.SWAP_ORIENTATION.keys, () => toggleOrientation());
   const currentTab = useAtomValue(currentTabAtom);
+  const practiceTabId = currentTab?.value ?? "no-active-tab";
   const tabFile = getTabFile(currentTab);
   const [evalOpen, setEvalOpen] = useAtom(currentEvalOpenAtom);
 
@@ -181,7 +182,8 @@ function Board({
     }),
   );
 
-  const [practiceState, setPracticeState] = useAtom(practiceStateAtom);
+  const [practiceState, setPracticeState] = useAtom(practiceStateFamily(practiceTabId));
+  const [trainingAreas, setTrainingAreas] = useAtom(trainingAreasAtom);
   const practiceUnit = useAtomValue(currentPracticeUnitAtom);
   const [sessionStats, setSessionStats] = useAtom(practiceSessionStatsAtom);
   const cardStartTime = useAtomValue(practiceCardStartTimeAtom);
@@ -196,7 +198,8 @@ function Board({
       }
 
       const i = deck.positions.indexOf(c);
-      const timeTaken = Date.now() - cardStartTime;
+      const timeTaken =
+        Date.now() - (practiceState.moveStartedAt ?? practiceState.lineStartedAt ?? cardStartTime);
 
       if (practiceUnit === "line" && practiceState.linePath) {
         const expectedChildIndex = practiceState.linePath[position.length] ?? 0;
@@ -208,62 +211,115 @@ function Board({
 
         if (san !== expectedSan) {
           const playedUci = makeUci(move);
-          const referenceEngine = engines
-            .filter(
-              (engine): engine is LocalEngine =>
-                engine.type === "local" && Boolean(engine.path) && !isMaiaEngine(engine),
-            )
-            .sort((left, right) =>
-              /stockfish/i.test(left.name) === /stockfish/i.test(right.name)
-                ? 0
-                : /stockfish/i.test(left.name)
-                  ? -1
-                  : 1,
-            )[0];
-          if (referenceEngine) {
-            setClassifyingDeviation(true);
+          setPendingMove(null);
+          let evaluated: BestMoves[] | null = null;
+          const evaluateDeviation = trainingAreas.openings.settings.evaluateOutsideRepertoire;
+          const referenceEngine = evaluateDeviation
+            ? engines
+                .filter(
+                  (engine): engine is LocalEngine =>
+                    engine.type === "local" && Boolean(engine.path) && !isMaiaEngine(engine),
+                )
+                .sort((left, right) =>
+                  /stockfish/i.test(left.name) === /stockfish/i.test(right.name)
+                    ? 0
+                    : /stockfish/i.test(left.name)
+                      ? -1
+                      : 1,
+                )[0]
+            : undefined;
+          if (evaluateDeviation && referenceEngine) {
+            setPracticeState({
+              ...practiceState,
+              phase: "classifying",
+              currentFen: currentNode.fen,
+              answer: expectedSan,
+              playedMove: san,
+              positionIndex: i,
+              linePositionIndices,
+              timeTaken,
+            });
             try {
-              const evaluated = await getBestMoves(
+              evaluated = await getBestMovesOnce(
                 referenceEngine,
-                deviationEvaluatorId,
                 { t: "Depth", c: 16 },
                 {
                   fen: rootFen,
                   moves,
                   extraOptions: [{ name: "MultiPV", value: "8" }],
                 },
+                8_000,
               );
-              const choices = evaluated?.[1] ?? [];
-              const candidate = choices.find((choice) => choice.uciMoves[0] === playedUci);
-              if (
-                choices[0] &&
-                candidate &&
-                acceptsOpeningDeviation(choices[0], candidate, pos.turn, 30)
-              ) {
-                setPracticeState({
-                  ...practiceState,
-                  phase: "deviation",
-                  currentFen: currentNode.fen,
-                  answer: expectedSan,
-                  playedMove: san,
-                  positionIndex: i,
-                  linePositionIndices,
-                  timeTaken,
-                });
-                notifications.show({
-                  title: "Buena desviación",
-                  message: `${san} es una buena jugada, pero no forma parte de esta línea.`,
-                  color: "blue",
-                });
-                return;
-              }
             } catch {
-              // If the reference engine is unavailable, preserve strict repertoire validation.
-            } finally {
-              setClassifyingDeviation(false);
-              void killEngine(referenceEngine, deviationEvaluatorId).catch(() => undefined);
+              evaluated = null;
             }
           }
+
+          const classification = evaluateDeviation
+            ? classifyOpeningMove(expectedSan, san, playedUci, evaluated, pos.turn, 30)
+            : "incorrect";
+          if (classification === "good-deviation") {
+            setPracticeState({
+              ...practiceState,
+              phase: "deviation",
+              currentFen: currentNode.fen,
+              answer: expectedSan,
+              playedMove: san,
+              positionIndex: i,
+              linePositionIndices,
+              timeTaken,
+            });
+            return;
+          }
+
+          if (classification === "incorrect" && practiceState.openingLineId) {
+            const lineId = practiceState.openingLineId;
+            setTrainingAreas((previous) => ({
+              ...previous,
+              openings: recordOpeningMoveAttempt(
+                previous.openings,
+                lineId,
+                position.length,
+                false,
+                timeTaken,
+              ),
+            }));
+          }
+
+          setPracticeState({
+            ...practiceState,
+            phase: "incorrect",
+            currentFen: currentNode.fen,
+            answer: expectedSan,
+            playedMove: san,
+            positionIndex: i,
+            linePositionIndices,
+            mistakes: (practiceState.mistakes ?? 0) + 1,
+            timeTaken,
+            moveStartedAt: Date.now(),
+            feedback:
+              classification === "engine-unavailable"
+                ? "engine-unavailable"
+                : evaluateDeviation
+                  ? "incorrect"
+                  : "strict",
+          });
+        } else {
+          if (practiceState.openingLineId) {
+            const lineId = practiceState.openingLineId;
+            setTrainingAreas((previous) => ({
+              ...previous,
+              openings: recordOpeningMoveAttempt(
+                previous.openings,
+                lineId,
+                position.length,
+                true,
+                timeTaken,
+              ),
+            }));
+          }
+          storeMakeMove({ payload: move });
+          setPendingMove(null);
           setPracticeState({
             ...practiceState,
             phase: "waiting",
@@ -272,27 +328,9 @@ function Board({
             playedMove: san,
             positionIndex: i,
             linePositionIndices,
-            mistakes: (practiceState.mistakes ?? 0) + 1,
             timeTaken,
-          });
-          notifications.show({
-            title: t("Common.Incorrect"),
-            message: t("Board.Practice.CorrectMoveWas", { move: expectedSan }),
-            color: "red",
-          });
-          await new Promise((resolve) => setTimeout(resolve, 500));
-          goToNext();
-        } else {
-          storeMakeMove({ payload: move });
-          setPendingMove(null);
-          setPracticeState({
-            ...practiceState,
-            phase: "waiting",
-            currentFen: currentNode.fen,
-            answer: expectedSan,
-            positionIndex: i,
-            linePositionIndices,
-            timeTaken,
+            moveStartedAt: Date.now(),
+            feedback: "correct",
           });
         }
         return;
@@ -435,9 +473,15 @@ function Board({
     !!headers.black_time_control;
 
   const practiceLock = !!practicing && !deck.positions.find((c) => c.fen === currentNode.fen);
+  const practiceInteractionLock =
+    !!practicing &&
+    practiceUnit === "line" &&
+    (practiceState.phase === "classifying" ||
+      practiceState.phase === "revealing" ||
+      practiceState.phase === "deviation");
 
   const movableColor: "white" | "black" | "both" | undefined = useMemo(() => {
-    return practiceLock || classifyingDeviation
+    return practiceLock || practiceInteractionLock
       ? undefined
       : editingMode
         ? "both"
@@ -448,7 +492,7 @@ function Board({
             .with("both", () => "both" as const)
             .with("none", () => undefined)
             .exhaustive();
-  }, [practiceLock, classifyingDeviation, editingMode, movable, turn]);
+  }, [practiceLock, practiceInteractionLock, editingMode, movable, turn]);
 
   const theme = useMantineTheme();
   const color = ANNOTATION_INFO[currentNode.annotations[0]]?.color || "gray";
@@ -587,7 +631,7 @@ function Board({
               className={classes.chessboard}
               ref={boardRef}
               onClick={() => {
-                eraseDrawablesOnClick && clearShapes();
+                if (eraseDrawablesOnClick) clearShapes();
               }}
               onWheel={(e) => {
                 if (enableBoardScroll) {
