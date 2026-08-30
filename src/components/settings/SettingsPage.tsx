@@ -47,6 +47,7 @@ import {
   nativeBarAtom,
   practiceAutoDifficultyAtom,
   previewBoardOnHoverAtom,
+  reuseEmptyAnalysisTabAtom,
   flipBoardAfterMoveAtom,
   showArrowsAtom,
   showConsecutiveArrowsAtom,
@@ -335,6 +336,14 @@ export default function Page() {
         description: t("Settings.ScrollThroughMoves.Desc"),
         keywords: ["scroll", "moves", "wheel"],
         render: () => <SettingsSwitch atom={enableBoardScrollAtom} />,
+      },
+      {
+        id: "reuse-empty-analysis-tab",
+        category: "board",
+        title: t("Settings.ReuseEmptyAnalysisTab"),
+        description: t("Settings.ReuseEmptyAnalysisTab.Desc"),
+        keywords: ["tab", "reuse", "play", "import"],
+        render: () => <SettingsSwitch atom={reuseEmptyAnalysisTabAtom} />,
       },
       {
         id: "material-display",

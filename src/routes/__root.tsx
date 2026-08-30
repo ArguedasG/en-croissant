@@ -1,6 +1,11 @@
 import { AppShell } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
-import { createRootRouteWithContext, Outlet, useNavigate } from "@tanstack/react-router";
+import {
+  createRootRouteWithContext,
+  Outlet,
+  useLocation,
+  useNavigate,
+} from "@tanstack/react-router";
 import { TauriEvent } from "@tauri-apps/api/event";
 import { Menu, MenuItem, PredefinedMenuItem, Submenu } from "@tauri-apps/api/menu";
 import { appLogDir, resolve } from "@tauri-apps/api/path";
@@ -20,10 +25,18 @@ import type { Dirs } from "@/App";
 import AboutModal from "@/components/About";
 import { SideBar } from "@/components/Sidebar";
 import TopBar from "@/components/TopBar";
-import { activeTabAtom, nativeBarAtom, tabsAtom } from "@/state/atoms";
+import { WorkspaceTabs } from "@/components/tabs/BoardsPage";
+import { isTrainingPath } from "@/utils/trainingTabs";
+import {
+  activeTabAtom,
+  nativeBarAtom,
+  reuseEmptyAnalysisTabAtom,
+  sidebarExpandedAtom,
+  tabsAtom,
+} from "@/state/atoms";
 import { keyMapAtom } from "@/state/keybinds";
 import { openFile } from "@/utils/files";
-import { createTab } from "@/utils/tabs";
+import { createTab, isEmptyAnalysisTab } from "@/utils/tabs";
 
 type MenuGroup = {
   label: string;
@@ -86,11 +99,14 @@ export const Route = createRootRouteWithContext<{
 });
 
 function RootLayout() {
+  const pathname = useLocation({ select: (location) => location.pathname });
   const isNative = useAtomValue(nativeBarAtom);
   const navigate = useNavigate();
 
-  const [, setTabs] = useAtom(tabsAtom);
-  const [, setActiveTab] = useAtom(activeTabAtom);
+  const [tabs, setTabs] = useAtom(tabsAtom);
+  const [activeTab, setActiveTab] = useAtom(activeTabAtom);
+  const reuseEmptyAnalysisTab = useAtomValue(reuseEmptyAnalysisTabAtom);
+  const sidebarExpanded = useAtomValue(sidebarExpandedAtom);
 
   const { t } = useTranslation();
 
@@ -101,14 +117,18 @@ function RootLayout() {
     });
     if (typeof selected === "string") {
       navigate({ to: "/" });
-      openFile(selected, setTabs, setActiveTab);
+      const currentTab = tabs.find((tab) => tab.value === activeTab);
+      openFile(selected, setTabs, setActiveTab, {
+        reuseTabId:
+          reuseEmptyAnalysisTab && isEmptyAnalysisTab(currentTab) ? currentTab?.value : undefined,
+      });
     }
-  }, [navigate, setActiveTab, setTabs]);
+  }, [activeTab, navigate, reuseEmptyAnalysisTab, setActiveTab, setTabs, tabs]);
 
   const createNewTab = useCallback(() => {
     navigate({ to: "/" });
     createTab({
-      tab: { name: t("Tab.NewTab"), type: "new" },
+      tab: { name: t("Home.Card.AnalysisBoard.Title"), type: "analysis" },
       setTabs,
       setActiveTab,
     });
@@ -339,8 +359,13 @@ function RootLayout() {
 
         if (pgnFiles.length > 0) {
           navigate({ to: "/" });
-          for (const file of pgnFiles) {
-            openFile(file, setTabs, setActiveTab);
+          const currentTab = tabs.find((tab) => tab.value === activeTab);
+          const reusableTabId =
+            reuseEmptyAnalysisTab && isEmptyAnalysisTab(currentTab) ? currentTab?.value : undefined;
+          for (const [index, file] of pgnFiles.entries()) {
+            openFile(file, setTabs, setActiveTab, {
+              reuseTabId: index === 0 ? reusableTabId : undefined,
+            });
           }
         }
       }
@@ -349,12 +374,12 @@ function RootLayout() {
     return () => {
       unlisten.then((fn) => fn());
     };
-  }, [navigate, setTabs, setActiveTab]);
+  }, [activeTab, navigate, reuseEmptyAnalysisTab, setTabs, setActiveTab, tabs]);
 
   return (
     <AppShell
       navbar={{
-        width: "3rem",
+        width: sidebarExpanded ? "11rem" : "3rem",
         breakpoint: 0,
       }}
       header={
@@ -384,7 +409,13 @@ function RootLayout() {
         <SideBar />
       </AppShell.Navbar>
       <AppShell.Main>
-        <Outlet />
+        {pathname === "/" || isTrainingPath(pathname) ? (
+          <WorkspaceTabs>
+            <Outlet />
+          </WorkspaceTabs>
+        ) : (
+          <Outlet />
+        )}
       </AppShell.Main>
     </AppShell>
   );

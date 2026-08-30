@@ -1,5 +1,6 @@
 import {
   Alert,
+  Button,
   Group,
   ScrollArea,
   SegmentedControl,
@@ -11,12 +12,12 @@ import {
 import { useDebouncedValue } from "@mantine/hooks";
 import { Link } from "@tanstack/react-router";
 import { useAtom, useAtomValue } from "jotai";
-import { memo, useContext, useEffect } from "react";
+import { memo, useContext, useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import useSWR from "swr/immutable";
 import { match } from "ts-pattern";
 import { useStore } from "zustand";
-import { commands } from "@/bindings";
+import { commands, type NormalizedGame, type PositionSummary } from "@/bindings";
 import { TreeStateContext } from "@/components/common/TreeStateContext";
 import {
   currentDbTabAtom,
@@ -28,7 +29,8 @@ import {
   referenceDbAtom,
   sessionsAtom,
 } from "@/state/atoms";
-import { getDatabases, type Opening, searchPosition } from "@/utils/db";
+import { getDatabases, isTransientPositionError, type Opening, queryPosition } from "@/utils/db";
+import PositionGamesTable from "./PositionGamesTable";
 import { formatNumber } from "@/utils/format";
 import { convertToNormalized, getLichessGames, getMasterGames } from "@/utils/lichess/api";
 import type { LichessGamesOptions, MasterGamesOptions } from "@/utils/lichess/explorer";
@@ -36,6 +38,7 @@ import DatabaseLoader from "./DatabaseLoader";
 import GamesTable from "./GamesTable";
 import NoDatabaseWarning from "./NoDatabaseWarning";
 import OpeningsTable from "./OpeningsTable";
+import OpeningReportPanel from "./OpeningReportPanel";
 import LichessOptionsPanel from "./options/LichessOptionsPanel";
 import LocalOptionsPanel from "./options/LocalOptionsPanel";
 import MasterOptionsPanel from "./options/MastersOptionsPanel";
@@ -60,17 +63,30 @@ export type LocalOptions = {
   fen: string;
   type: "exact" | "partial";
   player: number | null;
-  color: "white" | "black";
+  color: "white" | "black" | "any";
+  elo_min?: number;
+  elo_max?: number;
   start_date?: string;
   end_date?: string;
   result: "any" | "whitewon" | "draw" | "blackwon";
 };
 
 function sortOpenings(openings: Opening[]) {
-  return openings.sort((a, b) => b.black + b.draw + b.white - (a.black + a.draw + a.white));
+  return openings.sort(
+    (a, b) =>
+      b.black +
+        b.draw +
+        b.white +
+        (b.unknown ?? 0) -
+        (a.black + a.draw + a.white + (a.unknown ?? 0)) || a.move.localeCompare(b.move),
+  );
 }
 
-async function fetchOpening(db: DBType, tab: string) {
+async function fetchOpening(
+  db: DBType,
+  tab: string,
+  signal?: AbortSignal,
+): Promise<{ openings: Opening[]; games: NormalizedGame[]; snapshot?: PositionSummary }> {
   return match(db)
     .with({ type: "lch_all" }, async ({ fen, options, token }) => {
       const data = await getLichessGames(fen, options, token);
@@ -98,10 +114,11 @@ async function fetchOpening(db: DBType, tab: string) {
     })
     .with({ type: "local" }, async ({ options }) => {
       if (!options.path) throw Error("Missing reference database");
-      const positionData = await searchPosition(options, tab);
+      const positionData = await queryPosition(options, tab, signal);
       return {
-        openings: sortOpenings(positionData[0]),
-        games: positionData[1],
+        openings: sortOpenings(positionData.openings),
+        games: [],
+        snapshot: positionData,
       };
     })
     .exhaustive();
@@ -162,20 +179,53 @@ function DatabasePanel() {
 
   const tab = useAtomValue(currentTabAtom);
   const [tabType, setTabType] = useAtom(currentDbTabAtom);
+  const tabId = tab?.value;
+  const queryKey = JSON.stringify([dbType, tabId]);
+  const activeQuery = useRef<{ key: string; controller: AbortController } | null>(null);
+
+  useEffect(() => {
+    return () => {
+      activeQuery.current?.controller.abort();
+    };
+  }, []);
+
+  useEffect(() => {
+    const active = activeQuery.current;
+    // Also cancel when SWR already has the new position cached and does not run its fetcher.
+    // A fetcher for this render may have run already; never cancel that new controller.
+    if (active && (active.key !== queryKey || tabType === "options" || db !== "local")) {
+      active.controller.abort();
+    }
+  }, [db, queryKey, tabType]);
 
   const {
     data: openingData,
-    isLoading,
+    isLoading: initialLoading,
+    isValidating,
     error,
+    mutate,
   } = useSWR(
-    tabType !== "options" && !missingExplorerToken ? dbType : null,
-    async (dbType: DBType) => {
-      return fetchOpening(dbType, tab?.value || "");
+    tabType !== "options" && !missingExplorerToken ? [dbType, tabId] : null,
+    async ([source, owner]: [DBType, string | undefined]) => {
+      activeQuery.current?.controller.abort();
+      const controller = new AbortController();
+      activeQuery.current = { key: JSON.stringify([source, owner]), controller };
+      return fetchOpening(source, owner || "", controller.signal);
     },
+    { keepPreviousData: true },
   );
 
+  const transientError = isTransientPositionError(error);
+  const retriedQuery = useRef<string | null>(null);
+  useEffect(() => {
+    if (transientError && retriedQuery.current !== queryKey) {
+      retriedQuery.current = queryKey;
+      void mutate();
+    }
+  }, [transientError, queryKey, mutate]);
+  const isLoading = initialLoading || isValidating || transientError;
   const grandTotal = openingData?.openings?.reduce(
-    (acc, curr) => acc + curr.black + curr.white + curr.draw,
+    (acc, curr) => acc + curr.black + curr.white + curr.draw + (curr.unknown ?? 0),
     0,
   );
 
@@ -208,6 +258,18 @@ function DatabasePanel() {
               allowDeselect={false}
             />
           )}
+          {db === "local" && tabType !== "options" && (
+            <Button
+              size="xs"
+              variant="subtle"
+              loading={isLoading}
+              onClick={() => {
+                void mutate();
+              }}
+            >
+              {t("Board.Database.Refresh")}
+            </Button>
+          )}
         </Group>
 
         {tabType !== "options" && (
@@ -219,6 +281,11 @@ function DatabasePanel() {
         )}
       </Group>
       <DatabaseLoader isLoading={isLoading} tab={tab?.value ?? null} />
+      {!!openingData?.snapshot?.skippedGames && (
+        <Alert color="yellow">
+          {t("Board.Database.SkippedGames", { count: openingData.snapshot.skippedGames })}
+        </Alert>
+      )}
     </>
   );
 
@@ -242,12 +309,18 @@ function DatabasePanel() {
             {t("Board.Database.Stats")}
           </Tabs.Tab>
           <Tabs.Tab value="games">{t("Board.Database.Games")}</Tabs.Tab>
+          <Tabs.Tab
+            value="report"
+            disabled={dbType.type !== "local" || dbType.options.type !== "exact"}
+          >
+            {t("OpeningReport.Tab")}
+          </Tabs.Tab>
           <Tabs.Tab value="options">{t("Board.Database.Options")}</Tabs.Tab>
         </Tabs.List>
 
         <PanelWithError
           value="stats"
-          error={error}
+          error={transientError ? undefined : error}
           type={db}
           header={header}
           missingExplorerToken={missingExplorerToken}
@@ -256,20 +329,60 @@ function DatabasePanel() {
         </PanelWithError>
         <PanelWithError
           value="games"
-          error={error}
+          error={transientError ? undefined : error}
           type={db}
           header={header}
           missingExplorerToken={missingExplorerToken}
         >
-          <GamesTable
-            games={openingData?.games || []}
-            loading={isLoading}
-            databasePath={dbType.type === "local" ? dbType.options.path : null}
-          />
+          {dbType.type === "local" && openingData?.snapshot ? (
+            <PositionGamesTable
+              snapshot={openingData.snapshot}
+              databasePath={dbType.options.path!}
+              owner={tabId ?? ""}
+              onExpired={() => {
+                void mutate();
+              }}
+            />
+          ) : (
+            <GamesTable
+              games={openingData?.games || []}
+              loading={isLoading}
+              databasePath={dbType.type === "local" ? dbType.options.path : null}
+            />
+          )}
+        </PanelWithError>
+        <PanelWithError
+          value="report"
+          error={transientError ? undefined : error}
+          type={db}
+          header={header}
+          missingExplorerToken={missingExplorerToken}
+        >
+          {tabType === "report" &&
+          dbType.type === "local" &&
+          dbType.options.type === "exact" &&
+          openingData?.snapshot &&
+          !isLoading ? (
+            <OpeningReportPanel
+              key={`${openingData.snapshot.token}:${dbType.options.fen}`}
+              snapshot={openingData.snapshot}
+              displayFen={dbType.options.fen}
+              databasePath={dbType.options.path!}
+              owner={tabId ?? ""}
+              onGames={() => setTabType("games")}
+              onExpired={() => {
+                void mutate();
+              }}
+            />
+          ) : (
+            <Text p="sm" c="dimmed">
+              {t("OpeningReport.WaitForQuery")}
+            </Text>
+          )}
         </PanelWithError>
         <PanelWithError
           value="options"
-          error={error}
+          error={transientError ? undefined : error}
           type={db}
           header={header}
           missingExplorerToken={missingExplorerToken}
@@ -289,7 +402,7 @@ function DatabasePanel() {
 
 function PanelWithError(props: {
   value: string;
-  error: string;
+  error: unknown;
   type: string;
   header: React.ReactNode;
   children: React.ReactNode;
@@ -309,8 +422,8 @@ function PanelWithError(props: {
       </Alert>
     );
   }
-  if (props.error && props.type !== "local") {
-    children = <Alert color="red">{props.error.toString()}</Alert>;
+  if (props.error) {
+    children = <Alert color="red">{t("Board.Database.QueryFailed")}</Alert>;
   }
 
   return (

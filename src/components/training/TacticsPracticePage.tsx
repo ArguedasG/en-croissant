@@ -1,3 +1,4 @@
+import { useTranslation as useTrainingTranslation } from "react-i18next";
 import { Alert, Badge, Button, Card, Container, Group, Stack, Text, Title } from "@mantine/core";
 import { IconArrowLeft, IconCheck, IconPlayerSkipForward, IconX } from "@tabler/icons-react";
 import { useAtom, useAtomValue } from "jotai";
@@ -40,6 +41,8 @@ function acceptsMove(
 }
 
 export default function TacticsPracticePage() {
+  const { t: trainingT } = useTrainingTranslation();
+
   const { setId } = useParams({ from: "/training/tactics/practice/$setId" });
   const [areas, setAreas] = useAtom(trainingAreasAtom);
   const storedEngines = useAtomValue(enginesAtom);
@@ -75,7 +78,12 @@ export default function TacticsPracticePage() {
       try {
         if (!localEngine) {
           setResult("unsupported");
-          setMessage("Configura un motor local para validar tácticas con posiciones FEN.");
+          setMessage(
+            trainingT(
+              "Training.Copy.Setupalocalengine.616ea31b",
+              "Set up a local engine to validate FEN tactics.",
+            ),
+          );
           setAreas((previous) => ({
             ...previous,
             tactics: recordTacticsAttempt(previous.tactics, {
@@ -99,16 +107,28 @@ export default function TacticsPracticePage() {
         const candidate = bestMoves.find((line) => line.uciMoves[0] === playedMove);
         const side = exercise.fen.split(" ")[1] === "b" ? "black" : "white";
         const correct = Boolean(
-          candidate && bestMoves[0] && acceptsMove(bestMoves[0], candidate, side, set.config.acceptanceThresholdCp),
+          candidate &&
+          bestMoves[0] &&
+          acceptsMove(bestMoves[0], candidate, side, set.config.acceptanceThresholdCp),
         );
 
         setResult(correct ? "correct" : "incorrect");
         setMessage(
           correct
-            ? "Jugada correcta. La posición acepta esta continuación."
+            ? trainingT(
+                "Training.Copy.CorrectmoveThiscontinuationis.0b286569",
+                "Correct move. This continuation is accepted.",
+              )
             : exercise.solutionMoves[0]
-              ? `Jugada incorrecta. La continuación preparada comienza con ${exercise.solutionMoves[0]}.`
-              : "Jugada incorrecta según Stockfish.",
+              ? trainingT(
+                  "Training.Copy.IncorrectmoveThepreparedcontinuation.47d8a0b2",
+                  "Incorrect move. The prepared continuation begins with {{v0}}.",
+                  { v0: exercise.solutionMoves[0] },
+                )
+              : trainingT(
+                  "Training.Copy.IncorrectmoveaccordingtoStockfish.39a7ffe2",
+                  "Incorrect move according to Stockfish.",
+                ),
         );
         setAreas((previous) => ({
           ...previous,
@@ -122,12 +142,19 @@ export default function TacticsPracticePage() {
         }));
       } catch (error) {
         setResult("unsupported");
-        setMessage(error instanceof Error ? error.message : "No se pudo consultar Stockfish.");
+        setMessage(
+          error instanceof Error
+            ? error.message
+            : trainingT(
+                "Training.Copy.CouldnotqueryStockfish.1dcb9b6e",
+                "Could not query Stockfish.",
+              ),
+        );
       } finally {
         setBusy(false);
       }
     },
-    [busy, engines, evaluatorTabId, exercise, result, set, setAreas, setId],
+    [busy, engines, evaluatorTabId, exercise, result, set, setAreas, setId, trainingT],
   );
 
   function nextExercise() {
@@ -140,11 +167,21 @@ export default function TacticsPracticePage() {
   if (!set || !exercise) {
     return (
       <Container size="md" py="xl">
-        <Alert color="red" title="Set no encontrado">
-          El set de Táctica ya no existe o no contiene ejercicios.
+        <Alert color="red" title={trainingT("Training.Copy.Setnotfound.63b73336", "Set not found")}>
+          {" "}
+          {trainingT(
+            "Training.Copy.Thetacticssetnolonger.714ff554",
+            "The tactics set no longer exists or contains no exercises.",
+          )}{" "}
         </Alert>
-        <Button component={Link} to="/training/tactics" mt="md" leftSection={<IconArrowLeft size={16} />}>
-          Volver a Táctica
+        <Button
+          component={Link}
+          to="/training/tactics"
+          mt="md"
+          leftSection={<IconArrowLeft size={16} />}
+        >
+          {" "}
+          {trainingT("Training.Copy.Backtotactics.8239d676", "Back to tactics")}{" "}
         </Button>
       </Container>
     );
@@ -155,18 +192,32 @@ export default function TacticsPracticePage() {
       <Stack gap="md">
         <Group justify="space-between">
           <Group>
-            <Button component={Link} to="/training/tactics" variant="subtle" p="xs" aria-label="Volver">
+            <Button
+              component={Link}
+              to="/training/tactics"
+              variant="subtle"
+              p="xs"
+              aria-label={trainingT("Training.Copy.Back.ab26ae7b", "Back")}
+            >
               <IconArrowLeft size={20} />
             </Button>
             <div>
               <Title order={2}>{set.name}</Title>
               <Text size="sm" c="dimmed">
-                Ejercicio {index + 1} de {exercises.length} · respuesta validada bajo demanda
+                {" "}
+                {trainingT("Training.Copy.Exercise.24563ba8", "Exercise")} {index + 1}{" "}
+                {trainingT("Training.Copy.of.959a45d4", "of")} {exercises.length}{" "}
+                {trainingT(
+                  "Training.Copy.answervalidatedondemand.42eb9921",
+                  "· answer validated on demand",
+                )}{" "}
               </Text>
             </div>
           </Group>
           <Badge color="orange" variant="light">
-            Umbral {set.config.acceptanceThresholdCp} cp
+            {" "}
+            {trainingT("Training.Copy.Threshold.e01f7bf7", "Threshold")}{" "}
+            {set.config.acceptanceThresholdCp} cp
           </Badge>
         </Group>
 
@@ -186,12 +237,18 @@ export default function TacticsPracticePage() {
               <div>
                 <Text fw={600}>{exercise.title}</Text>
                 <Text size="sm" c="dimmed" mt="xs">
-                  Juega la mejor continuación para resolver la posición.
+                  {" "}
+                  {trainingT(
+                    "Training.Copy.Playthebestcontinuationto.17c2f75f",
+                    "Play the best continuation to solve the position.",
+                  )}{" "}
                 </Text>
                 {message && (
                   <Alert
                     mt="md"
-                    color={result === "correct" ? "teal" : result === "unsupported" ? "yellow" : "red"}
+                    color={
+                      result === "correct" ? "teal" : result === "unsupported" ? "yellow" : "red"
+                    }
                     icon={result === "correct" ? <IconCheck size={16} /> : <IconX size={16} />}
                   >
                     {message}
@@ -204,7 +261,8 @@ export default function TacticsPracticePage() {
                 leftSection={<IconPlayerSkipForward size={16} />}
                 onClick={nextExercise}
               >
-                Siguiente ejercicio
+                {" "}
+                {trainingT("Training.Copy.Nextexercise.415f5c2e", "Next exercise")}{" "}
               </Button>
             </Stack>
           </Card>

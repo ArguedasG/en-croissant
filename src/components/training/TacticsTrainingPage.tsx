@@ -1,3 +1,5 @@
+import { useTranslation as useTrainingTranslation } from "react-i18next";
+import i18n from "i18next";
 import {
   Alert,
   Badge,
@@ -22,16 +24,18 @@ import { trainingAreasAtom } from "@/state/trainingAreas";
 import { addTacticsSet, getTacticsSetProgress, parseTrainingRecords } from "@/utils/trainingAreas";
 import { createTab } from "@/utils/tabs";
 
-function filename(path: string): string {
+function filename(path: string, trainingT: typeof i18n.t = i18n.t): string {
   return (
     path
       .split(/[\\/]/)
       .pop()
-      ?.replace(/\.[^.]+$/, "") || "Set de táctica"
+      ?.replace(/\.[^.]+$/, "") || trainingT("Training.Copy.Tacticsset.e9b5f38c", "Tactics set")
   );
 }
 
 export default function TacticsTrainingPage() {
+  const { t: trainingT } = useTrainingTranslation();
+
   const navigate = useNavigate();
   const [areas, setAreas] = useAtom(trainingAreasAtom);
   const [, setTabs] = useAtom(tabsAtom);
@@ -44,7 +48,10 @@ export default function TacticsTrainingPage() {
   async function openLichessTrainer() {
     await navigate({ to: "/" });
     await createTab({
-      tab: { name: "Entrenamiento de Táctica", type: "puzzles" },
+      tab: {
+        name: trainingT("Training.Copy.Tacticstraining.8816b222", "Tactics training"),
+        type: "puzzles",
+      },
       setTabs,
       setActiveTab,
     });
@@ -62,11 +69,14 @@ export default function TacticsTrainingPage() {
       const usable = records.filter((record) => record.hasExplicitFen);
       if (usable.length === 0) {
         throw new Error(
-          "No se encontraron posiciones con FEN explícito. El primer importador no interpreta partidas completas.",
+          trainingT(
+            "Training.Copy.NopositionswithexplicitFEN.ec65daa7",
+            "No positions with explicit FEN headers were found. This importer requires a FEN for each position.",
+          ),
         );
       }
 
-      const name = setName.trim() || filename(selected);
+      const name = setName.trim() || filename(selected, trainingT);
       setAreas((previous) => ({
         ...previous,
         tactics: addTacticsSet(previous.tactics, name, description.trim(), usable),
@@ -75,11 +85,22 @@ export default function TacticsTrainingPage() {
       setDescription("");
       const skipped = records.length - usable.length;
       setFeedback({
-        text: `Set «${name}» importado con ${usable.length} ejercicios${skipped > 0 ? `; ${skipped} registros sin FEN fueron omitidos` : ""}.`,
+        text: trainingT(
+          "Training.Copy.Setv0importedwithv1.33ec5dd8",
+          "Set “{{v0}}” imported with {{v1}} exercises{{v2}}.",
+          {
+            v0: name,
+            v1: usable.length,
+            v2: skipped > 0 ? `; ${skipped} registros sin FEN fueron omitidos` : "",
+          },
+        ),
       });
     } catch (error) {
       setFeedback({
-        text: error instanceof Error ? error.message : "No se pudo importar el set.",
+        text:
+          error instanceof Error
+            ? error.message
+            : trainingT("Training.Copy.Couldnotimporttheset.90285448", "Could not import the set."),
         color: "red",
       });
     }
@@ -90,18 +111,31 @@ export default function TacticsTrainingPage() {
       <Stack gap="lg">
         <Group justify="space-between" align="flex-start">
           <Group align="flex-start">
-            <Button component={Link} to="/training" variant="subtle" p="xs" aria-label="Volver">
+            <Button
+              component={Link}
+              to="/training"
+              variant="subtle"
+              p="xs"
+              aria-label={trainingT("Training.Copy.Back.ab26ae7b", "Back")}
+            >
               <IconArrowLeft size={20} />
             </Button>
             <div>
-              <Title order={2}>Entrenamiento de Táctica</Title>
+              <Title order={2}>
+                {trainingT("Training.Copy.Tacticstraining.8816b222", "Tactics training")}
+              </Title>
               <Text c="dimmed" mt={4}>
-                Mantén el flujo Lichess y organiza tus propios sets de posiciones tácticas.
+                {" "}
+                {trainingT(
+                  "Training.Copy.UsetheLichessworkflowand.0ab91ef9",
+                  "Use the Lichess workflow and organize your own tactical position sets.",
+                )}{" "}
               </Text>
             </div>
           </Group>
           <Button leftSection={<IconPlayerPlay size={16} />} onClick={openLichessTrainer}>
-            Abrir entrenador Lichess
+            {" "}
+            {trainingT("Training.Copy.OpenLichesstrainer.66c59db5", "Open Lichess trainer")}{" "}
           </Button>
         </Group>
 
@@ -116,29 +150,41 @@ export default function TacticsTrainingPage() {
             <Group>
               <IconUpload size={24} color="var(--mantine-color-orange-6)" />
               <div>
-                <Text fw={600}>Importar set propio</Text>
+                <Text fw={600}>
+                  {trainingT("Training.Copy.Importyourownset.de7fbd60", "Import your own set")}
+                </Text>
                 <Text size="sm" c="dimmed">
-                  Cada registro con FEN representa una posición. La solución puede estar en sus
-                  jugadas o calcularse bajo demanda al responder.
+                  {" "}
+                  {trainingT(
+                    "Training.Copy.EachFENrecordrepresentsa.22d0105d",
+                    "Each FEN record represents a position. Its solution can be included in the moves or calculated on demand when you answer.",
+                  )}{" "}
                 </Text>
               </div>
             </Group>
             <SimpleGrid cols={{ base: 1, md: 2 }}>
               <TextInput
-                label="Nombre del set"
-                placeholder="Ej. Tácticas de cálculo"
+                label={trainingT("Training.Copy.Setname.a54101c6", "Set name")}
+                placeholder={trainingT(
+                  "Training.Copy.egCalculationtactics.73de31ea",
+                  "e.g. Calculation tactics",
+                )}
                 value={setName}
                 onChange={(event) => setSetName(event.currentTarget.value)}
               />
               <TextInput
-                label="Descripción"
+                label={trainingT("Training.Copy.Description.ee00b96f", "Description")}
                 placeholder="Origen, nivel o tema"
                 value={description}
                 onChange={(event) => setDescription(event.currentTarget.value)}
               />
             </SimpleGrid>
             <Button leftSection={<IconUpload size={16} />} color="orange" onClick={importSet}>
-              Seleccionar PGN o archivo de posiciones
+              {" "}
+              {trainingT(
+                "Training.Copy.SelectPGNorpositionfile.dd6d1748",
+                "Select PGN or position file",
+              )}{" "}
             </Button>
           </Stack>
         </Card>
@@ -147,7 +193,9 @@ export default function TacticsTrainingPage() {
           <Card withBorder>
             <Stack align="center" py="xl">
               <IconPuzzle size={42} color="var(--mantine-color-dimmed)" />
-              <Text c="dimmed">Todavía no hay sets propios.</Text>
+              <Text c="dimmed">
+                {trainingT("Training.Copy.Nopersonalsetsyet.621db003", "No personal sets yet.")}
+              </Text>
             </Stack>
           </Card>
         ) : (
@@ -165,13 +213,25 @@ export default function TacticsTrainingPage() {
                         </Badge>
                       </Group>
                       <Text size="sm" c="dimmed" mt="xs" mih={42}>
-                        {set.description || "Set de posiciones tácticas."}
+                        {set.description ||
+                          trainingT(
+                            "Training.Copy.Tacticalpositionset.3fbbdb39",
+                            "Tactical position set.",
+                          )}
                       </Text>
                       <Text size="sm" mt="md">
-                        Correctas: {progress.correct} · Incorrectas: {progress.incorrect}
+                        {" "}
+                        {trainingT("Training.Copy.Correct.6fb6bcb3", "Correct:")} {progress.correct}{" "}
+                        {trainingT("Training.Copy.Incorrect.ffa38b68", "· Incorrect:")}{" "}
+                        {progress.incorrect}
                       </Text>
                       <Text size="xs" c="dimmed" mt={4}>
-                        Umbral de equivalencia: {set.config.acceptanceThresholdCp} cp
+                        {" "}
+                        {trainingT(
+                          "Training.Copy.Equivalencethreshold.c63fdf99",
+                          "Equivalence threshold:",
+                        )}{" "}
+                        {set.config.acceptanceThresholdCp} cp
                       </Text>
                     </div>
                     <Button
@@ -186,7 +246,8 @@ export default function TacticsTrainingPage() {
                         })
                       }
                     >
-                      Practicar set
+                      {" "}
+                      {trainingT("Training.Copy.Practiceset.da2522ca", "Practice set")}{" "}
                     </Button>
                   </Stack>
                 </Card>

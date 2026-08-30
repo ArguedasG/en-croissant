@@ -61,6 +61,7 @@ function RepertoireInfo({ saveFile }: { saveFile?: () => void }) {
 
   const referenceDb = useAtomValue(referenceDbAtom);
   const currentTab = useAtomValue(currentTabAtom);
+  const queryOwner = currentTab?.value ?? "repertoire";
   const minGames = useAtomValue(coverageMinGamesAtom);
 
   const orientation = headers.orientation || "white";
@@ -70,7 +71,7 @@ function RepertoireInfo({ saveFile }: { saveFile?: () => void }) {
   const rootStructureHash = useMemo(() => getTreeStructureHash(root), [root]);
 
   const [rawOpenings, setRawOpenings] = useState<
-    { move: string; white: number; draw: number; black: number }[]
+    { move: string; white: number; draw: number; black: number; unknown?: number }[]
   >([]);
   const [loading, setLoading] = useState(false);
 
@@ -84,6 +85,7 @@ function RepertoireInfo({ saveFile }: { saveFile?: () => void }) {
     }
 
     const queryFen = currentNode.fen;
+    const controller = new AbortController();
     setLoading(true);
 
     searchPosition(
@@ -95,19 +97,21 @@ function RepertoireInfo({ saveFile }: { saveFile?: () => void }) {
         player: null,
         result: "any",
       },
-      "build-tab",
+      `build:${queryOwner}`,
+      controller.signal,
     )
       .then(([openings]) => {
-        if (queryFen !== currentFenRef.current) return;
+        if (controller.signal.aborted || queryFen !== currentFenRef.current) return;
         setRawOpenings(openings.filter((op) => op.move !== "*"));
         setLoading(false);
       })
       .catch(() => {
-        if (queryFen !== currentFenRef.current) return;
+        if (controller.signal.aborted || queryFen !== currentFenRef.current) return;
         setRawOpenings([]);
         setLoading(false);
       });
-  }, [currentNode.fen, referenceDb]);
+    return () => controller.abort();
+  }, [currentNode.fen, referenceDb, queryOwner]);
 
   const [coverageMap, setCoverageMap] = useState<Map<string, number>>(new Map());
   const [gamesMap, setGamesMap] = useState<Map<string, number>>(new Map());
@@ -131,23 +135,45 @@ function RepertoireInfo({ saveFile }: { saveFile?: () => void }) {
       return;
     }
     const version = ++coverageVersionRef.current;
+    const controller = new AbortController();
     setCoverageLoading(true);
-    computeTreeCoverage(root, orientation, referenceDb, minGames, startPath).then((result) => {
-      if (version === coverageVersionRef.current) {
-        setCoverageMap(result.coverageMap);
-        setGamesMap(result.gamesMap);
-        setMissingGamesMap(result.missingGamesMap);
-        setCoverageLoading(false);
-      }
-    });
-  }, [rootStructureHash, orientation, referenceDb, startPathKey, minGames]);
+    computeTreeCoverage(
+      root,
+      orientation,
+      referenceDb,
+      minGames,
+      startPath,
+      controller.signal,
+      `coverage:${queryOwner}`,
+    )
+      .then((result) => {
+        if (!controller.signal.aborted && version === coverageVersionRef.current) {
+          setCoverageMap(result.coverageMap);
+          setGamesMap(result.gamesMap);
+          setMissingGamesMap(result.missingGamesMap);
+          setCoverageLoading(false);
+        }
+      })
+      .catch(() => {
+        if (!controller.signal.aborted && version === coverageVersionRef.current) {
+          setCoverageLoading(false);
+          setCoverageMap(new Map());
+          setGamesMap(new Map());
+          setMissingGamesMap(new Map());
+        }
+      });
+    return () => controller.abort();
+  }, [rootStructureHash, orientation, referenceDb, startPathKey, minGames, queryOwner]);
 
   const positionMoves = useMemo(() => {
-    const total = rawOpenings.reduce((acc, op) => acc + op.white + op.black + op.draw, 0);
+    const total = rawOpenings.reduce(
+      (acc, op) => acc + op.white + op.black + op.draw + (op.unknown ?? 0),
+      0,
+    );
 
     const fromDb: PositionMove[] = rawOpenings
       .map((op) => {
-        const games = op.white + op.black + op.draw;
+        const games = op.white + op.black + op.draw + (op.unknown ?? 0);
         const childIndex = currentNode.children.findIndex((c) => c.san === op.move);
         const inRepertoire = childIndex !== -1;
         const coveragePath = [...position, childIndex].join(",");
@@ -263,10 +289,15 @@ function RepertoireInfo({ saveFile }: { saveFile?: () => void }) {
         <Group justify="space-between" align="center" wrap="nowrap">
           <div>
             <Text fz="sm" fw={600}>
-              Copia editable del repertorio
+              {" "}
+              {t("Training.Copy.Editablerepertoirecopy.f2b48ee3", "Editable repertoire copy")}{" "}
             </Text>
             <Text fz="xs" c="dimmed">
-              Guarda el árbol PGN y sincroniza sus líneas con el gestor.
+              {" "}
+              {t(
+                "Training.Copy.SavethePGNtreeand.e29282eb",
+                "Save the PGN tree and synchronize its lines with the manager.",
+              )}{" "}
             </Text>
           </div>
           <Button
@@ -274,7 +305,8 @@ function RepertoireInfo({ saveFile }: { saveFile?: () => void }) {
             onClick={() => saveFile?.()}
             disabled={!saveFile}
           >
-            Guardar cambios
+            {" "}
+            {t("Training.Copy.Savechanges.14bdfaf2", "Save changes")}{" "}
           </Button>
         </Group>
       </Paper>

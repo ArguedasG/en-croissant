@@ -1,13 +1,16 @@
 import { resolve, tempDir } from "@tauri-apps/api/path";
-import { save } from "@tauri-apps/plugin-dialog";
-import { copyFile } from "@tauri-apps/plugin-fs";
+import { ask, save } from "@tauri-apps/plugin-dialog";
+import { copyFile, exists, writeTextFile } from "@tauri-apps/plugin-fs";
+import i18n from "i18next";
 import { z } from "zod";
 import type { StoreApi } from "zustand";
 import { commands } from "@/bindings";
 import { type FileMetadata, fileMetadataSchema } from "@/components/files/file";
 import type { TreeStoreState } from "@/state/store/tree";
+import { getLatestSessionStorageValue } from "@/state/store/debouncedStorage";
 import { getPGN, parsePGN } from "./chess";
 import { type GameHeaders, getGameName } from "./treeReducer";
+import { unwrap } from "./unwrap";
 
 const INVALID_FILENAME_CHARS = /[\\/:*?"<>|]+/g;
 
@@ -56,9 +59,15 @@ const gameOriginSchema = z.discriminatedUnion("kind", [
 ]);
 
 export const tabSchema = z.object({
+    revision: z.number().int().nonnegative().optional(),
     name: z.string(),
     value: z.string(),
-    type: z.enum(["new", "play", "generator", "analysis", "puzzles"]),
+    type: z.enum(["new", "play", "generator", "analysis", "puzzles", "training"]),
+    trainingPath: z
+        .string()
+        .regex(/^\/training(?:\/[^?#]*)?$/)
+        .optional(),
+    returnPath: z.enum(["/accounts", "/databases"]).optional(),
     gameOrigin: gameOriginSchema,
 });
 
@@ -101,6 +110,8 @@ export async function createTab({
     headers,
     gameOrigin,
     position,
+    reuseTabId,
+    preserveNewTab = false,
 }: {
     tab: Omit<Tab, "value" | "gameOrigin">;
     setTabs: React.Dispatch<React.SetStateAction<Tab[]>>;
@@ -109,17 +120,17 @@ export async function createTab({
     headers?: GameHeaders;
     gameOrigin?: GameOrigin;
     position?: number[];
+    reuseTabId?: string;
+    preserveNewTab?: boolean;
 }) {
-    const id = genID();
+    const id = reuseTabId ?? genID();
 
     if (pgn !== undefined) {
         const tree = await parsePGN(pgn, headers?.fen);
         if (headers) {
             tree.headers = headers;
-            if (position) {
-                tree.position = position;
-            }
         }
+        if (position) tree.position = position;
         sessionStorage.setItem(id, JSON.stringify({ version: 0, state: tree }));
     }
 
@@ -129,9 +140,12 @@ export async function createTab({
             value: id,
             gameOrigin: gameOrigin ?? { kind: "none" },
         };
+        if (reuseTabId && prev.some((candidate) => candidate.value === reuseTabId)) {
+            return prev.map((candidate) => (candidate.value === reuseTabId ? nextTab : candidate));
+        }
         if (
             prev.length === 0 ||
-            (prev.length === 1 && prev[0].type === "new" && tab.type !== "new")
+            (prev.length === 1 && prev[0].type === "new" && tab.type !== "new" && !preserveNewTab)
         ) {
             return [nextTab];
         }
@@ -139,6 +153,40 @@ export async function createTab({
     });
     setActiveTab(id);
     return id;
+}
+
+export function isEmptyAnalysisTab(tab: Tab | undefined): boolean {
+    if (!tab) return false;
+    const hasTreeState = getLatestSessionStorageValue(tab.value) !== null;
+    if (tab.type === "new") return !hasTreeState;
+    return tab.type === "analysis" && tab.gameOrigin.kind === "none" && !hasTreeState;
+}
+
+export async function createOrReuseBoardTab({
+    tabs,
+    activeTab,
+    type,
+    name,
+    reuseEmpty,
+    setTabs,
+    setActiveTab,
+}: {
+    tabs: Tab[];
+    activeTab: string | null;
+    type: "analysis" | "play" | "generator";
+    name: string;
+    reuseEmpty: boolean;
+    setTabs: React.Dispatch<React.SetStateAction<Tab[]>>;
+    setActiveTab: React.Dispatch<React.SetStateAction<string | null>>;
+}) {
+    const current = tabs.find((tab) => tab.value === activeTab);
+    const reuseTabId = reuseEmpty && isEmptyAnalysisTab(current) ? current?.value : undefined;
+    return createTab({
+        tab: { name, type },
+        setTabs,
+        setActiveTab,
+        reuseTabId,
+    });
 }
 
 export async function isInTempDir(filePath: string): Promise<boolean> {
@@ -153,14 +201,19 @@ export async function saveToFile({
     setCurrentTab,
     store,
     isUserSave,
+    mode = "save",
+    protectedPaths = [],
 }: {
     dir: string;
     tab: Tab | undefined;
     setCurrentTab: React.Dispatch<React.SetStateAction<Tab>>;
     store: StoreApi<TreeStoreState>;
     isUserSave?: boolean;
+    mode?: "save" | "saveAs" | "export";
+    protectedPaths?: string[];
 }) {
     let filePath: string;
+    let savedOrigin: GameOrigin | undefined;
     const currentOrigin = tab?.gameOrigin;
     const fileOrigin =
         currentOrigin?.kind === "file" || currentOrigin?.kind === "temp_file"
@@ -176,10 +229,67 @@ export async function saveToFile({
         variations: true,
     })}\n\n`;
 
+    if (mode !== "save") {
+        const selected = await save({
+            title:
+                mode === "saveAs"
+                    ? i18n.t("Pgn.SaveAs", "Save as new PGN")
+                    : i18n.t("Pgn.ExportCopy", "Export PGN copy"),
+            defaultPath: await resolve(
+                dir,
+                `${getDefaultGameFilename(store.getState().headers)}.pgn`,
+            ),
+            filters: [{ name: "PGN", extensions: ["pgn"] }],
+        });
+        if (!selected) return false;
+        const destination = /\.pgn$/i.test(selected) ? selected : `${selected}.pgn`;
+        const normalized = (path: string) => path.replace(/\\/g, "/").toLowerCase();
+        if (
+            [...protectedPaths, ...(fileOrigin ? [fileOrigin.file.path] : [])].some(
+                (path) => normalized(destination) === normalized(path),
+            )
+        ) {
+            throw new Error(
+                i18n.t("Pgn.DifferentPath", "Choose a different file to keep the source intact."),
+            );
+        }
+        if (
+            (await exists(destination)) &&
+            !(await ask(
+                i18n.t("Pgn.Overwrite", "Replace the entire existing file? {{path}}", {
+                    path: destination,
+                }),
+                { kind: "warning" },
+            ))
+        )
+            return false;
+        // Save As / Export contain only this game, never its neighbouring PGN records.
+        await writeTextFile(destination, pgn);
+        if (mode === "saveAs") {
+            setCurrentTab((previous) => ({
+                ...previous,
+                gameOrigin: {
+                    kind: "file",
+                    gameNumber: 0,
+                    file: {
+                        type: "file",
+                        name: destination,
+                        path: destination,
+                        numGames: 1,
+                        metadata: { type: "game", tags: [] },
+                        lastModified: Date.now(),
+                    },
+                },
+            }));
+            store.getState().save();
+        }
+        return true;
+    }
+
     if (databaseOrigin) {
-        await commands.writeDbGame(databaseOrigin.database, databaseOrigin.gameId, pgn);
+        unwrap(await commands.writeDbGame(databaseOrigin.database, databaseOrigin.gameId, pgn));
         store.getState().save();
-        return;
+        return true;
     }
 
     if (fileOrigin && !(isTempFile && isUserSave)) {
@@ -198,7 +308,7 @@ export async function saveToFile({
             ],
         });
         if (userChoice === null) {
-            return;
+            return false;
         }
         if (userChoice.endsWith(".pgn")) {
             filePath = userChoice;
@@ -214,27 +324,27 @@ export async function saveToFile({
 
         const numGames = isTempFile && fileOrigin ? fileOrigin.file.numGames : 1;
         const gameNumber = fileOrigin?.gameNumber ?? 0;
-        setCurrentTab((prev) => {
-            return {
-                ...prev,
-                gameOrigin: {
-                    kind: "file",
-                    gameNumber,
-                    file: {
-                        type: "file",
-                        name: filePath,
-                        path: filePath,
-                        numGames,
-                        metadata: {
-                            tags: [],
-                            type: "game",
-                        },
-                        lastModified: Date.now(),
-                    },
+        savedOrigin = {
+            kind: "file",
+            gameNumber,
+            file: {
+                type: "file",
+                name: filePath,
+                path: filePath,
+                numGames,
+                metadata: {
+                    tags: [],
+                    type: "game",
                 },
-            };
-        });
+                lastModified: Date.now(),
+            },
+        };
     }
-    await commands.writeGame(filePath, fileOrigin?.gameNumber ?? 0, pgn);
+    unwrap(await commands.writeGame(filePath, fileOrigin?.gameNumber ?? 0, pgn));
+    if (savedOrigin) {
+        const gameOrigin = savedOrigin;
+        setCurrentTab((prev) => ({ ...prev, gameOrigin }));
+    }
     store.getState().save();
+    return true;
 }

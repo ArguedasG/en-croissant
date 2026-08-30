@@ -358,6 +358,41 @@ async searchPosition(file: string, query: GameQuery, tabId: string) : Promise<Re
     else return { status: "error", error: e  as any };
 }
 },
+async queryPosition(file: string, query: GameQuery, tabId: string, background: boolean) : Promise<Result<PositionSummary, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("query_position", { file, query, tabId, background }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async generateOpeningReport(token: string, options: OpeningReportOptions, tabId: string) : Promise<Result<OpeningReport, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("generate_opening_report", { token, options, tabId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async getPositionGames(token: string, offset: number, limit: number, sort: PositionGameSort, direction: SortDirection, tabId: string) : Promise<Result<PositionGameMetadata[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_position_games", { token, offset, limit, sort, direction, tabId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async getPositionGame(token: string, offset: number) : Promise<Result<PositionGame, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_position_game", { token, offset }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async cancelPositionSearch(tabId: string) : Promise<boolean> {
+    return await TAURI_INVOKE("cancel_position_search", { tabId });
+},
 async getPlayers(file: string, query: PlayerQuery) : Promise<Result<QueryResponse<Player[]>, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("get_players", { file, query }) };
@@ -810,7 +845,7 @@ export type GameMoveEvent = { gameId: string; moves: GameMove[]; fen: string; wh
 export type GameMoveSource = "human" | "engine" | "profileRepertoire" | "polyglot" | "initial"
 export type GameOutcome = "Won" | "Drawn" | "Lost"
 export type GameOverEvent = { gameId: string; result: GameResult; moves: GameMove[] }
-export type GameQuery = { options?: QueryOptions<GameSort> | null; player1?: number | null; player2?: number | null; tournament_id?: number | null; start_date?: string | null; end_date?: string | null; range1?: [number, number] | null; range2?: [number, number] | null; sides?: Sides | null; outcome?: string | null; position?: PositionQueryJs | null; wanted_result?: string | null }
+export type GameQuery = { options?: QueryOptions<GameSort> | null; player1?: number | null; player2?: number | null; any_player?: number | null; game_id?: number | null; tournament_id?: number | null; start_date?: string | null; end_date?: string | null; range1?: [number, number] | null; range2?: [number, number] | null; sides?: Sides | null; outcome?: string | null; position?: PositionQueryJs | null; wanted_result?: string | null }
 export type GameResult = { type: "whiteWins"; reason: GameEndReason } | { type: "blackWins"; reason: GameEndReason } | { type: "draw"; reason: DrawReason }
 export type GameSort = "id" | "date" | "whiteElo" | "blackElo" | "ply_count"
 export type GameState = { gameId: string; status: GameStatus; initialFen: string; moves: GameMove[]; currentFen: string; ply: number; turn: string; whiteTime: bigint | null; blackTime: bigint | null; whitePlayer: string; blackPlayer: string }
@@ -831,11 +866,13 @@ export type ModelGameExperimentKind = "single" | "batch"
 export type ModelGameExperimentStatus = "running" | "completed" | "cancelled"
 export type ModelGameExperimentSummary = { experimentId: string; ownerId: string; kind: ModelGameExperimentKind; status: ModelGameExperimentStatus; createdAt: string; updatedAt: string; whitePlayer: string; blackPlayer: string; initialFen: string; totalGames: number; completedGames: number; failedGames: number; recordedGames: number }
 export type MoveAnalysis = { best: BestMoves[]; novelty: boolean; is_sacrifice: boolean }
-export type NormalizedGame = { id: number; fen: string; event: string; event_id: number; site: string; site_id: number; date?: string | null; time?: string | null; round?: string | null; white: string; white_id: number; white_elo?: number | null; black: string; black_id: number; black_elo?: number | null; result: Outcome; time_control?: string | null; eco?: string | null; ply_count?: number | null; moves: string }
+export type NormalizedGame = { id: number; fen: string; event: string; event_id: number; site: string; site_id: number; date?: string | null; time?: string | null; round?: string | null; white: string; white_id: number; white_elo?: number | null; black: string; black_id: number; black_elo?: number | null; result: Outcome; time_control?: string | null; eco?: string | null; opening?: string | null; ply_count?: number | null; moves: string }
 export type OpeningBookConfig = { path: string; maxPly?: bigint }
 export type OpeningLineSide = "white" | "black" | "both"
 export type OpeningRepertoireConfig = { id: string; version?: number; mode?: OpeningRepertoireMode; maxPly?: number; lines?: WeightedOpeningLine[] }
 export type OpeningRepertoireMode = "weighted" | "forcedLine" | "none"
+export type OpeningReport = { version: number; generatedAt: string; databaseName: string; databaseGames: number; position: PositionSummary; options: OpeningReportOptions; filters: ReportFilters; statistics: ReportStatistics; years: ReportYear[]; unknownYearGames: number; eloBands: ReportEloBand[]; unknownEloGames: number; mostPlayedPlayers: ReportPlayer[]; strongestPlayers: ReportPlayer[]; playerCount: number; cohort: ReportStatistics; excludedTheoryGames: number; theory: ReportLine[]; theoryLineCount: number; displayedTheoryGames: number; moveOrders: ReportMoveOrder[]; moveOrderCount: number; transpositions: ReportTransposition[]; transpositionCount: number; elapsedMs: number; cacheHit: boolean }
+export type OpeningReportOptions = { depth: number; theoryGames: number; maxLines: number; displayFen: string }
 export type OutOpening = { name: string; fen: string }
 export type Outcome = "1-0" | "0-1" | "1/2-1/2" | "*"
 export type Player = { id: number; name: string | null; elo: number | null }
@@ -845,14 +882,28 @@ export type PlayerPresetCategory = "custom" | "humanLike" | "limited" | "strong"
 export type PlayerQuery = { options: QueryOptions<PlayerSort>; name?: string | null; range?: [number, number] | null }
 export type PlayerSort = "id" | "name" | "elo"
 export type PlayersTime = { white: number; black: number; winc: number; binc: number }
+export type PositionGame = { game: NormalizedGame; ply: number }
+export type PositionGameMetadata = { snapshotOffset: number; id: number; white: string; black: string; whiteElo: number | null; blackElo: number | null; date: string | null; result: string; event: string; ply: number; nextMove: string }
+export type PositionGameSort = "index" | "date" | "averageElo" | "whiteElo" | "blackElo"
 export type PositionQueryJs = { fen: string; type_: string }
-export type PositionStats = { move: string; white: number; draw: number; black: number }
+export type PositionStats = { move: string; white: number; draw: number; black: number; unknown: number }
+export type PositionSummary = { token: string; fingerprint: string; fen: string; total: number; openings: PositionStats[]; skippedGames: number; scanMs: number; cacheHit: boolean }
 export type ProgressEvent = { id: string; progress: number; finished: boolean }
 export type ProgressItem = { id: string; progress: number; finished: boolean }
 export type Puzzle = { id: number; fen: string; moves: string; rating: number; rating_deviation: number; popularity: number; nb_plays: number }
 export type PuzzleDatabaseInfo = { title: string; description: string; puzzleCount: number; storageSize: bigint; path: string }
 export type QueryOptions<SortT> = { skipCount: boolean; page?: number | null; pageSize?: number | null; sort: SortT; direction: SortDirection }
 export type QueryResponse<T> = { data: T; count: number | null }
+export type ReportEloBand = { minElo: number; maxElo: number; results: ReportResults }
+export type ReportFilters = { whitePlayer: number | null; blackPlayer: number | null; anyPlayer: number | null; whiteElo: [number, number] | null; blackElo: [number, number] | null; startDate: string | null; endDate: string | null; result: string | null }
+export type ReportLine = { moves: string[]; fen: string; statistics: ReportStatistics; exampleOffset: number; example: PositionGameMetadata }
+export type ReportMoveOrder = { startFen: string; moves: string[]; statistics: ReportStatistics; exampleOffset: number }
+export type ReportPlayer = { id: number; name: string; games: number; whiteGames: number; blackGames: number; wins: number; draws: number; losses: number; unknown: number; averageElo: number | null; peakElo: number | null }
+export type ReportResults = { white: number; draw: number; black: number; unknown: number }
+export type ReportRoute = { moves: string[]; results: ReportResults; exampleOffset: number }
+export type ReportStatistics = { results: ReportResults; averageWhiteElo: number | null; averageBlackElo: number | null; ratedWhite: number; ratedBlack: number }
+export type ReportTransposition = { fen: string; ply: number; games: number; routeCount: number; routes: ReportRoute[] }
+export type ReportYear = { year: number; results: ReportResults }
 export type Score = { value: ScoreValue; 
 /**
  * The probability of each result (win, draw, loss).

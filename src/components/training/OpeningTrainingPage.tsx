@@ -1,3 +1,5 @@
+import { useTranslation as useTrainingTranslation } from "react-i18next";
+import i18n from "i18next";
 import {
   Alert,
   Badge,
@@ -23,16 +25,18 @@ import { trainingAreasAtom } from "@/state/trainingAreas";
 import { addOpeningRepertoire, parseTrainingRecords } from "@/utils/trainingAreas";
 import { createFile, openFile } from "@/utils/files";
 
-function filename(path: string): string {
+function filename(path: string, trainingT: typeof i18n.t = i18n.t): string {
   return (
     path
       .split(/[\\/]/)
       .pop()
-      ?.replace(/\.[^.]+$/, "") || "Repertorio"
+      ?.replace(/\.[^.]+$/, "") || trainingT("Training.Copy.Repertoire.5125381b", "Repertoire")
   );
 }
 
 export default function OpeningTrainingPage() {
+  const { t: trainingT } = useTrainingTranslation();
+
   const navigate = useNavigate();
   const { documentDir } = useLoaderData({ from: "/training/openings" });
   const [areas, setAreas] = useAtom(trainingAreasAtom);
@@ -57,9 +61,15 @@ export default function OpeningTrainingPage() {
     try {
       const raw = await readTextFile(selected);
       const records = await parseTrainingRecords(raw);
-      if (records.length === 0) throw new Error("El PGN no contiene líneas importables.");
+      if (records.length === 0)
+        throw new Error(
+          trainingT(
+            "Training.Copy.ThePGNcontainsnoimportable.6bc5efa3",
+            "The PGN contains no importable lines.",
+          ),
+        );
 
-      const repertoireName = name.trim() || filename(selected);
+      const repertoireName = name.trim() || filename(selected, trainingT);
       const created = await createFile({
         filename: repertoireName,
         filetype: "repertoire",
@@ -101,13 +111,23 @@ export default function OpeningTrainingPage() {
       setName("");
       setDescription("");
       setFeedback({
-        text: `Repertorio «${repertoireName}» importado con ${records.length} líneas.`,
+        text: trainingT(
+          "Training.Copy.Repertoirev0importedwithv1.3dab39e0",
+          "Repertoire “{{v0}}” imported with {{v1}} lines.",
+          { v0: repertoireName, v1: records.length },
+        ),
       });
       await navigate({ to: "/" });
       await openFile(created.value, setTabs, setActiveTab);
     } catch (error) {
       setFeedback({
-        text: error instanceof Error ? error.message : "No se pudo importar el repertorio.",
+        text:
+          error instanceof Error
+            ? error.message
+            : trainingT(
+                "Training.Copy.Couldnotimporttherepertoire.8d7bcf4d",
+                "Could not import the repertoire.",
+              ),
         color: "red",
       });
     }
@@ -137,14 +157,25 @@ export default function OpeningTrainingPage() {
     <Container size="xl" py="md">
       <Stack gap="lg">
         <Group align="flex-start">
-          <Button component={Link} to="/training" variant="subtle" p="xs" aria-label="Volver">
+          <Button
+            component={Link}
+            to="/training"
+            variant="subtle"
+            p="xs"
+            aria-label={trainingT("Training.Copy.Back.ab26ae7b", "Back")}
+          >
             <IconArrowLeft size={20} />
           </Button>
           <div>
-            <Title order={2}>Entrenamiento de Aperturas</Title>
+            <Title order={2}>
+              {trainingT("Training.Copy.Openingtraining.268bdba9", "Opening training")}
+            </Title>
             <Text c="dimmed" mt={4}>
-              Importa repertorios y practícalos con la experiencia existente de líneas completas y
-              repetición espaciada.
+              {" "}
+              {trainingT(
+                "Training.Copy.Importrepertoiresandpracticecomplete.e293f0a8",
+                "Import repertoires and practice complete lines using spaced repetition.",
+              )}{" "}
             </Text>
           </div>
         </Group>
@@ -160,39 +191,54 @@ export default function OpeningTrainingPage() {
             <Group>
               <IconUpload size={24} color="var(--mantine-color-blue-6)" />
               <div>
-                <Text fw={600}>Importar repertorio PGN</Text>
+                <Text fw={600}>
+                  {trainingT("Training.Copy.ImportPGNrepertoire.bc0efff0", "Import PGN repertoire")}
+                </Text>
                 <Text size="sm" c="dimmed">
-                  Se conserva el archivo como repertorio del proyecto y se organiza en variantes y
-                  líneas para la práctica.
+                  {" "}
+                  {trainingT(
+                    "Training.Copy.Thefileiskeptas.361a9af2",
+                    "The file is kept as a project repertoire, organized into variations and lines for practice.",
+                  )}{" "}
                 </Text>
               </div>
             </Group>
             <SimpleGrid cols={{ base: 1, md: 3 }}>
               <TextInput
-                label="Nombre"
-                placeholder="Ej. Francesa con blancas"
+                label={trainingT("Training.Copy.Name.562bb157", "Name")}
+                placeholder={trainingT(
+                  "Training.Copy.egFrenchDefenseas.dc938947",
+                  "e.g. French Defense as White",
+                )}
                 value={name}
                 onChange={(event) => setName(event.currentTarget.value)}
               />
               <TextInput
-                label="Descripción"
-                placeholder="Objetivo del repertorio"
+                label={trainingT("Training.Copy.Description.ee00b96f", "Description")}
+                placeholder={trainingT("Training.Copy.Repertoiregoal.8b47ac77", "Repertoire goal")}
                 value={description}
                 onChange={(event) => setDescription(event.currentTarget.value)}
               />
               <Select
-                label="Color"
+                label={trainingT("Training.Copy.Color.6b73191a", "Color")}
                 data={[
-                  { value: "white", label: "Blancas" },
-                  { value: "black", label: "Negras" },
-                  { value: "both", label: "Ambos colores" },
+                  { value: "white", label: trainingT("Training.Copy.White.9666a8c0", "White") },
+                  { value: "black", label: trainingT("Training.Copy.Black.ead8fe1f", "Black") },
+                  {
+                    value: "both",
+                    label: trainingT("Training.Copy.Bothcolors.c5bf9151", "Both colors"),
+                  },
                 ]}
                 value={color}
                 onChange={(value) => value && setColor(value as typeof color)}
               />
             </SimpleGrid>
             <Button color="blue" leftSection={<IconUpload size={16} />} onClick={importRepertoire}>
-              Seleccionar PGN de repertorio
+              {" "}
+              {trainingT(
+                "Training.Copy.SelectrepertoirePGN.e0199e01",
+                "Select repertoire PGN",
+              )}{" "}
             </Button>
           </Stack>
         </Card>
@@ -201,7 +247,9 @@ export default function OpeningTrainingPage() {
           <Card withBorder>
             <Stack align="center" py="xl">
               <IconBook2 size={42} color="var(--mantine-color-dimmed)" />
-              <Text c="dimmed">Todavía no hay repertorios registrados.</Text>
+              <Text c="dimmed">
+                {trainingT("Training.Copy.Norepertoiresyet.24e289d9", "No repertoires yet.")}
+              </Text>
             </Stack>
           </Card>
         ) : (
@@ -218,22 +266,33 @@ export default function OpeningTrainingPage() {
                       <div>
                         <Title order={4}>{repertoire.name}</Title>
                         <Text size="sm" c="dimmed" mt={4}>
-                          {repertoire.description || "Repertorio de aperturas."}
+                          {repertoire.description ||
+                            trainingT(
+                              "Training.Copy.Openingrepertoire.0216f702",
+                              "Opening repertoire.",
+                            )}
                         </Text>
                       </div>
                       <Badge color="blue" variant="light">
                         {repertoire.color === "both"
-                          ? "Ambos"
+                          ? trainingT("Training.Copy.Both.727f1e02", "Both")
                           : repertoire.color === "white"
-                            ? "Blancas"
-                            : "Negras"}
+                            ? trainingT("Training.Copy.White.9666a8c0", "White")
+                            : trainingT("Training.Copy.Black.ead8fe1f", "Black")}
                       </Badge>
                     </Group>
                     <Text size="sm">
-                      {variants.length} variantes · {lineCount} líneas
+                      {variants.length}{" "}
+                      {trainingT("Training.Copy.variations.ca95a410", "variations ·")} {lineCount}{" "}
+                      {trainingT("Training.Copy.lines.6dad0dc4", "lines")}{" "}
                     </Text>
                     <Text size="xs" c="dimmed">
-                      Umbral de desviación: {repertoire.acceptanceThresholdCp} cp
+                      {" "}
+                      {trainingT(
+                        "Training.Copy.Deviationthreshold.2d7a8cf1",
+                        "Deviation threshold:",
+                      )}{" "}
+                      {repertoire.acceptanceThresholdCp} cp
                     </Text>
                     <Button
                       color="blue"
@@ -241,7 +300,11 @@ export default function OpeningTrainingPage() {
                       leftSection={<IconPlayerPlay size={16} />}
                       onClick={() => practiceRepertoire(repertoire)}
                     >
-                      Practicar repertorio
+                      {" "}
+                      {trainingT(
+                        "Training.Copy.Practicerepertoire.da71a3f0",
+                        "Practice repertoire",
+                      )}{" "}
                     </Button>
                   </Stack>
                 </Card>

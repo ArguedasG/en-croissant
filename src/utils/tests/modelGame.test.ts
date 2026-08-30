@@ -2,8 +2,25 @@ import { parseUci } from "chessops";
 import { describe, expect, it } from "vitest";
 import { buildModelGameSourcePgn, getModelGameArtifactPaths } from "../modelGame";
 import { createNode, defaultTree } from "../treeReducer";
+import { createTreeStore } from "@/state/store/tree";
 
 describe("model game generator utilities", () => {
+    it("plays from a selected sideline, not the end of the repertoire mainline", () => {
+        const store = createTreeStore();
+        store.getState().makeMoves({ payload: ["e4", "e5", "Nf3", "Nc6"] });
+        store.getState().goToMove([0]);
+        store.getState().makeMoves({ payload: ["c5", "Nf3", "d6"] });
+        store.getState().goToMove([0, 1]);
+        const state = store.getState();
+        const original = JSON.stringify(state);
+        const source = buildModelGameSourcePgn(state.root, state.headers, state.position);
+
+        expect(source).toContain("1. e4 c5");
+        expect(source).not.toContain("e5");
+        expect(source).not.toContain("Nf3");
+        expect(source).not.toContain("d6");
+        expect(JSON.stringify(store.getState())).toBe(original);
+    });
     it("copies only the PGN history leading to the selected node", () => {
         const state = defaultTree();
         state.headers.event = "Source";

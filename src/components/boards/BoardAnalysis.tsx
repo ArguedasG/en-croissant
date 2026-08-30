@@ -74,13 +74,13 @@ function BoardAnalysis() {
   const setAnnotation = useStore(store, (s) => s.setAnnotation);
 
   const saveFile = useCallback(async () => {
-    await saveToFile({
+    const saved = await saveToFile({
       dir: documentDir,
       setCurrentTab,
       tab: currentTab,
       store,
     });
-    if (tabFile?.metadata.type === "repertoire" && currentTab) {
+    if (saved && tabFile?.metadata.type === "repertoire" && currentTab) {
       const gameNumber =
         currentTab.gameOrigin.kind === "file" || currentTab.gameOrigin.kind === "temp_file"
           ? currentTab.gameOrigin.gameNumber
@@ -99,14 +99,14 @@ function BoardAnalysis() {
     }
   }, [setCurrentTab, currentTab, documentDir, store, tabFile, setTrainingAreas]);
   const userSaveFile = useCallback(async () => {
-    await saveToFile({
+    const saved = await saveToFile({
       dir: documentDir,
       setCurrentTab,
       tab: currentTab,
       store,
       isUserSave: true,
     });
-    if (tabFile?.metadata.type === "repertoire" && currentTab) {
+    if (saved && tabFile?.metadata.type === "repertoire" && currentTab) {
       const gameNumber =
         currentTab.gameOrigin.kind === "file" || currentTab.gameOrigin.kind === "temp_file"
           ? currentTab.gameOrigin.gameNumber

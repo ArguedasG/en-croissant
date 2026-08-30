@@ -2,6 +2,8 @@
 
 Estado: Etapas 1 a 5 y tres etapas de correcciones implementadas al 2026-08-23; la fase completa sigue en progreso y pendiente de validación manual consolidada.
 
+El pulido 6.8 implementado el 2026-08-27 se documenta en [training-phase-6-8.es.md](training-phase-6-8.es.md): incorporación de líneas y PGN a repertorios, biblioteca de partidas modelo, guardado explícito, avance táctico y catálogos ES/EN. Sus pruebas manuales nativas y empaquetadas siguen pendientes.
+
 ## Modelo del producto
 
 Entrenamiento se divide en tres experiencias independientes:
@@ -16,6 +18,9 @@ biblioteca genérica anterior permanece oculta y no representa la UX principal.
 
 ## Navegación
 
+- Desde el ajuste 6.7 del 2026-08-27, el hub y las tres áreas comparten la barra de pestañas del
+  tablero. Elegir un área transforma la pestaña del hub, sin añadir otra por cada navegación; al
+  volver a una pestaña de entrenamiento se recupera su ruta.
 - El acceso existente de Puzzles abre `/training/tactics`.
 - Finales tiene acceso directo desde la pantalla de inicio.
 - Entrar en Táctica ya no abre inmediatamente el tablero: primero se elige una base o set y su modo.

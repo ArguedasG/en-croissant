@@ -27,7 +27,8 @@ use std::sync::{Arc, Mutex};
 use bot_league::BotLeagueManager;
 use chess::{BestMovesPayload, EngineProcess};
 use dashmap::DashMap;
-use db::{DatabaseProgress, GameQuery, NormalizedGame, PositionStats};
+use db::{generate_opening_report, get_position_game, get_position_games, query_position};
+use db::{ActivePositionSearches, DatabaseProgress, GameQuery, PositionSearchCache};
 use derivative::Derivative;
 use game::GameManager;
 use model_game_batch::ModelGameBatchManager;
@@ -59,9 +60,9 @@ use crate::chess::{
     kill_engine, kill_engines, stop_engine,
 };
 use crate::db::{
-    clear_games, convert_pgn, create_indexes, delete_database, delete_db_game, delete_empty_games,
-    delete_indexes, export_to_pgn, get_player, get_players_game_info, get_tournaments,
-    preload_reference_db, search_position, MmapSearchIndex,
+    cancel_position_search, clear_games, convert_pgn, create_indexes, delete_database,
+    delete_db_game, delete_empty_games, delete_indexes, export_to_pgn, get_player,
+    get_players_game_info, get_tournaments, preload_reference_db, search_position, MmapSearchIndex,
 };
 use crate::fs::set_file_as_executable;
 use crate::game::{
@@ -92,7 +93,7 @@ use crate::{
         get_opening_from_fen, get_opening_from_fens, get_opening_from_name, search_opening_name,
     },
 };
-use std::sync::atomic::AtomicBool;
+use std::sync::atomic::{AtomicBool, AtomicU64};
 use tokio::sync::Semaphore;
 
 #[derive(Derivative)]
@@ -102,12 +103,20 @@ pub struct AppState {
         String,
         diesel::r2d2::Pool<diesel::r2d2::ConnectionManager<diesel::SqliteConnection>>,
     >,
-    line_cache: DashMap<(GameQuery, PathBuf), (Vec<PositionStats>, Vec<NormalizedGame>)>,
+    line_cache: Mutex<PositionSearchCache>,
     db_cache: Mutex<Option<(PathBuf, MmapSearchIndex)>>,
     #[derivative(Default(value = "Arc::new(Semaphore::new(2))"))]
     new_request: Arc<Semaphore>,
     #[derivative(Default(value = "DashMap::new()"))]
     search_collisions: DashMap<(GameQuery, PathBuf), Arc<tokio::sync::Mutex<()>>>,
+    active_position_searches: ActivePositionSearches,
+    position_search_sequence: AtomicU64,
+    position_queries: Mutex<db::PositionQueryCache>,
+    position_index_build: tokio::sync::Mutex<()>,
+    opening_report_request: tokio::sync::Mutex<()>,
+    position_order_request: tokio::sync::Mutex<()>,
+    #[derivative(Default(value = "Arc::new(Semaphore::new(1))"))]
+    background_position_request: Arc<Semaphore>,
     pgn_offsets: DashMap<String, Vec<u64>>,
 
     engine_processes: DashMap<(String, String), Arc<tokio::sync::Mutex<EngineProcess>>>,
@@ -130,8 +139,8 @@ async fn close_splashscreen(window: Window) -> Result<(), String> {
     Ok(())
 }
 
-fn main() {
-    let specta_builder = tauri_specta::Builder::new()
+fn bindings_builder() -> tauri_specta::Builder<tauri::Wry> {
+    tauri_specta::Builder::new()
         .commands(tauri_specta::collect_commands!(
             close_splashscreen,
             get_best_moves,
@@ -178,6 +187,11 @@ fn main() {
             get_db_info,
             get_games,
             search_position,
+            query_position,
+            generate_opening_report,
+            get_position_games,
+            get_position_game,
+            cancel_position_search,
             get_players,
             get_puzzle_db_info,
             get_puzzle_themes,
@@ -236,7 +250,23 @@ fn main() {
             GameOverEvent,
             ModelGameBatchEvent,
             BotLeagueEvent
-        ));
+        ))
+}
+
+#[test]
+#[cfg(debug_assertions)]
+#[ignore = "explicit binding generation; writes the generated frontend API"]
+fn export_frontend_bindings() {
+    bindings_builder()
+        .export(
+            Typescript::default().bigint(BigIntExportBehavior::BigInt),
+            "../src/bindings/generated.ts",
+        )
+        .unwrap();
+}
+
+fn main() {
+    let specta_builder = bindings_builder();
 
     #[cfg(debug_assertions)]
     specta_builder

@@ -4,6 +4,9 @@ use specta::Type;
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error(transparent)]
+    Sqlite(#[from] rusqlite::Error),
+
+    #[error(transparent)]
     Io(Box<std::io::Error>),
 
     #[error(transparent)]
@@ -122,6 +125,9 @@ pub enum Error {
 
     #[error("Analysis cancelled")]
     AnalysisCancelled,
+
+    #[error("Search stopped")]
+    SearchCancelled,
 }
 
 impl From<std::io::Error> for Error {

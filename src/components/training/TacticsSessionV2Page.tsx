@@ -1,3 +1,5 @@
+import { useTranslation as useTrainingTranslation } from "react-i18next";
+import TacticsAdvanceControl from "./TacticsAdvanceControl";
 import {
   ActionIcon,
   Alert,
@@ -24,7 +26,6 @@ import {
   IconCheck,
   IconChevronLeft,
   IconChevronRight,
-  IconPlayerSkipForward,
   IconRefresh,
   IconSearch,
   IconSettings,
@@ -105,6 +106,8 @@ function validCycle(cycle: TacticsActiveCycle | null, total: number) {
 }
 
 export default function TacticsSessionV2Page() {
+  const { t: trainingT } = useTrainingTranslation();
+
   const { setId } = useParams({ from: "/training/tactics/practice/$setId" });
   const { problem } = useSearch({ from: "/training/tactics/practice/$setId" });
   const navigate = useNavigate();
@@ -224,7 +227,10 @@ export default function TacticsSessionV2Page() {
     startedAt.current = Date.now();
 
     async function load() {
-      if (!setConfig || !setExerciseIds) throw new Error("El set ya no existe.");
+      if (!setConfig || !setExerciseIds)
+        throw new Error(
+          trainingT("Training.Copy.Thesetnolongerexists.39d26ccd", "The set no longer exists."),
+        );
       const stableSet = { source: setSource, exerciseIds: setExerciseIds, config: setConfig };
       return loadTacticsExercise(stableSet, areas.tactics.exercises, activeIndex);
     }
@@ -233,13 +239,28 @@ export default function TacticsSessionV2Page() {
       .then((loaded) => !cancelled && setExercise(loaded))
       .catch((error) => {
         if (!cancelled)
-          setLoadError(error instanceof Error ? error.message : "No se pudo cargar el ejercicio.");
+          setLoadError(
+            error instanceof Error
+              ? error.message
+              : trainingT(
+                  "Training.Copy.Couldnotloadtheexercise.06c7cf47",
+                  "Could not load the exercise.",
+                ),
+          );
       })
       .finally(() => !cancelled && setLoading(false));
     return () => {
       cancelled = true;
     };
-  }, [activeIndex, areas.tactics.exercises, setConfig, setExerciseIds, setId, setSource]);
+  }, [
+    activeIndex,
+    areas.tactics.exercises,
+    setConfig,
+    setExerciseIds,
+    setId,
+    setSource,
+    trainingT,
+  ]);
 
   const completedIndexes = isWoodpecker
     ? currentCycleCompletedIndexes
@@ -312,7 +333,9 @@ export default function TacticsSessionV2Page() {
       setFailures(nextFailures);
       setFailedIndexes(nextFailed);
       setRetrying(true);
-      setMessage("Jugada incorrecta. Inténtalo de nuevo.");
+      setMessage(
+        trainingT("Training.Copy.IncorrectmoveTryagain.b114a07a", "Incorrect move. Try again."),
+      );
       persistAttempt(
         outcome,
         playedMove,
@@ -433,26 +456,6 @@ export default function TacticsSessionV2Page() {
     resetExerciseState();
   }
 
-  const nextExerciseRef = useRef(nextExercise);
-  nextExerciseRef.current = nextExercise;
-
-  useEffect(() => {
-    if (result !== "correct" || finishedSummary) return;
-    const completesCycle =
-      isWoodpecker && new Set([...currentCycleCompletedIndexes, activeIndex]).size >= total;
-    if (!set?.progress.autoAdvance && !completesCycle) return;
-    const timer = setTimeout(() => nextExerciseRef.current(), 650);
-    return () => clearTimeout(timer);
-  }, [
-    activeIndex,
-    currentCycleCompletedIndexes,
-    finishedSummary,
-    isWoodpecker,
-    result,
-    set,
-    total,
-  ]);
-
   function startNextCycle() {
     if (!set || !finishedSummary) return;
     const nextNumber = cycleNumber + 1;
@@ -481,7 +484,9 @@ export default function TacticsSessionV2Page() {
     await navigate({ to: "/" });
     await launchTrainingPosition({
       fen: exercise.fen,
-      name: `Análisis · ${exercise.title}`,
+      name: trainingT("Training.Copy.Analysisv0.b7ffacfd", "Analysis · {{v0}}", {
+        v0: exercise.title,
+      }),
       type: "analysis",
       setTabs,
       setActiveTab,
@@ -498,30 +503,47 @@ export default function TacticsSessionV2Page() {
         <Card withBorder>
           <Stack align="center" py="xl">
             <IconCheck size={44} color="var(--mantine-color-teal-6)" />
-            <Title order={2}>Ciclo {finishedSummary.number} guardado</Title>
+            <Title order={2}>
+              {trainingT("Training.Copy.Cycle.4b8c1a8a", "Cycle")} {finishedSummary.number}{" "}
+              {trainingT("Training.Copy.saved.0344b48c", "saved")}
+            </Title>
             <Text c="dimmed" ta="center">
-              {finishedSummary.completedCount} de {finishedSummary.exerciseCount} problemas ·{" "}
-              {finishedSummary.failures} fallos · {formatTime(finishedSummary.timeMs)}
+              {finishedSummary.completedCount} {trainingT("Training.Copy.of.959a45d4", "of")}{" "}
+              {finishedSummary.exerciseCount}{" "}
+              {trainingT("Training.Copy.puzzles.6cfdb9ec", "puzzles ·")} {finishedSummary.failures}{" "}
+              {trainingT("Training.Copy.mistakes.5c65c76e", "mistakes ·")}{" "}
+              {formatTime(finishedSummary.timeMs)}
             </Text>
             {previousCycle && (
               <Alert color="blue" w="100%">
-                Ciclo anterior: {previousCycle.failures} fallos en{" "}
+                {" "}
+                {trainingT("Training.Copy.Previouscycle.35411be3", "Previous cycle:")}{" "}
+                {previousCycle.failures}{" "}
+                {trainingT("Training.Copy.mistakesin.64106f51", "mistakes in")}{" "}
                 {formatTime(previousCycle.timeMs)}.
               </Alert>
             )}
             <Alert color="orange" w="100%">
-              El ciclo {cycleNumber + 1} volverá a recorrer los {total} problemas del set completo.
+              {" "}
+              {trainingT("Training.Copy.Cycle.be150316", "Cycle")} {cycleNumber + 1}{" "}
+              {trainingT("Training.Copy.willgothroughall.7c725a8e", "will go through all")} {total}{" "}
+              {trainingT(
+                "Training.Copy.puzzlesinthecompleteset.6f63ef8d",
+                "puzzles in the complete set.",
+              )}{" "}
             </Alert>
             <Group>
               <Button component={Link} to="/training/tactics" variant="default">
-                Volver a Táctica
+                {" "}
+                {trainingT("Training.Copy.Backtotactics.8239d676", "Back to tactics")}{" "}
               </Button>
               <Button
                 color="orange"
                 leftSection={<IconRefresh size={16} />}
                 onClick={startNextCycle}
               >
-                Iniciar ciclo {cycleNumber + 1}
+                {" "}
+                {trainingT("Training.Copy.Startcycle.c6434792", "Start cycle")} {cycleNumber + 1}
               </Button>
             </Group>
           </Stack>
@@ -535,7 +557,7 @@ export default function TacticsSessionV2Page() {
     : Math.round(((activeIndex + 1) / total) * 100);
   const completedOptions = completedIndexes.map((value) => ({
     value: String(value),
-    label: `Problema ${value + 1} ✓`,
+    label: trainingT("Training.Copy.Puzzlev0.76f70f4a", "Puzzle {{v0}} ✓", { v0: value + 1 }),
   }));
 
   return (
@@ -548,7 +570,7 @@ export default function TacticsSessionV2Page() {
               to="/training/tactics"
               variant="subtle"
               p="xs"
-              aria-label="Volver"
+              aria-label={trainingT("Training.Copy.Back.ab26ae7b", "Back")}
             >
               <IconArrowLeft size={20} />
             </Button>
@@ -556,35 +578,55 @@ export default function TacticsSessionV2Page() {
               <Title order={2}>{set.name}</Title>
               <Text size="sm" c="dimmed">
                 {browsingIndex !== null
-                  ? `Explorando el problema ${activeIndex + 1} · reanudación en ${resumeIndex + 1}`
+                  ? trainingT(
+                      "Training.Copy.Exploringpuzzlev0resumeat.ec21e9ea",
+                      "Exploring puzzle {{v0}} · resume at {{v1}}",
+                      { v0: activeIndex + 1, v1: resumeIndex + 1 },
+                    )
                   : isWoodpecker
-                    ? `Ciclo ${cycleNumber} · problema ${activeIndex + 1} de ${total}`
-                    : `Problema ${activeIndex + 1} de ${total}`}
+                    ? trainingT(
+                        "Training.Copy.Cyclev0puzzlev1of.a2d5bda7",
+                        "Cycle {{v0}} · puzzle {{v1}} of {{v2}}",
+                        { v0: cycleNumber, v1: activeIndex + 1, v2: total },
+                      )
+                    : trainingT("Training.Copy.Puzzlev0ofv1.2278f01a", "Puzzle {{v0}} of {{v1}}", {
+                        v0: activeIndex + 1,
+                        v1: total,
+                      })}
               </Text>
             </div>
           </Group>
           <Group>
             {isWoodpecker && (
               <Badge color="orange" variant="light">
-                {formatTime(cycleElapsed)} · {failures} fallos
+                {formatTime(cycleElapsed)} · {failures}{" "}
+                {trainingT("Training.Copy.mistakes.5fb1604c", "mistakes")}{" "}
               </Badge>
             )}
-            <Badge variant="light">{isWoodpecker ? "Woodpecker" : "Guiado"}</Badge>
+            <Badge variant="light">
+              {isWoodpecker ? "Woodpecker" : trainingT("Training.Copy.Guided.57bd258f", "Guided")}
+            </Badge>
             {isWoodpecker && (
               <Menu position="bottom-end" withinPortal>
                 <Menu.Target>
-                  <ActionIcon variant="default" aria-label="Configuración del ciclo">
+                  <ActionIcon
+                    variant="default"
+                    aria-label={trainingT("Training.Copy.Cyclesettings.56a17ec9", "Cycle settings")}
+                  >
                     <IconSettings size={17} />
                   </ActionIcon>
                 </Menu.Target>
                 <Menu.Dropdown>
-                  <Menu.Label>Opciones avanzadas</Menu.Label>
+                  <Menu.Label>
+                    {trainingT("Training.Copy.Advancedoptions.abd17408", "Advanced options")}
+                  </Menu.Label>
                   <Menu.Item
                     color="red"
                     leftSection={<IconAlertTriangle size={15} />}
                     onClick={() => setEarlyFinishOpen(true)}
                   >
-                    Terminar ciclo antes de tiempo
+                    {" "}
+                    {trainingT("Training.Copy.Endcycleearly.d3cc4e59", "End cycle early")}{" "}
                   </Menu.Item>
                 </Menu.Dropdown>
               </Menu>
@@ -599,10 +641,18 @@ export default function TacticsSessionV2Page() {
             {loading ? (
               <Stack align="center" py="xl">
                 <Loader />
-                <Text c="dimmed">Cargando problema…</Text>
+                <Text c="dimmed">
+                  {trainingT("Training.Copy.Loadingpuzzle.f51a73af", "Loading puzzle…")}
+                </Text>
               </Stack>
             ) : loadError || !exercise ? (
-              <Alert color="red" title="No se pudo cargar el problema">
+              <Alert
+                color="red"
+                title={trainingT(
+                  "Training.Copy.Couldnotloadthepuzzle.1fbadbba",
+                  "Could not load the puzzle",
+                )}
+              >
                 {loadError}
               </Alert>
             ) : set.config.validationMode !== "engine" && exercise.solutionLines.length > 0 ? (
@@ -616,14 +666,24 @@ export default function TacticsSessionV2Page() {
                     .length
                 }
                 onCorrect={(move) =>
-                  finishAttempt("correct", move, "Problema resuelto correctamente.")
+                  finishAttempt(
+                    "correct",
+                    move,
+                    trainingT(
+                      "Training.Copy.Puzzlesolvedcorrectly.aa4b0cbe",
+                      "Puzzle solved correctly.",
+                    ),
+                  )
                 }
                 onIncorrect={(move) => finishAttempt("incorrect", move, "")}
               />
             ) : set.config.validationMode === "prepared" ? (
               <Alert color="yellow">
-                Este registro no contiene una solución preparada. Cambia la validación a automática
-                o por motor.
+                {" "}
+                {trainingT(
+                  "Training.Copy.Thisrecordhasnoprepared.9e18dd59",
+                  "This record has no prepared solution. Switch validation to automatic or engine.",
+                )}{" "}
               </Alert>
             ) : (
               <EngineTacticsBoard
@@ -640,11 +700,22 @@ export default function TacticsSessionV2Page() {
             <Card withBorder>
               <Stack>
                 <div>
-                  <Text fw={600}>{exercise?.title ?? `Problema ${activeIndex + 1}`}</Text>
+                  <Text fw={600}>
+                    {exercise?.title ??
+                      trainingT("Training.Copy.Puzzlev0.c9ca2375", "Puzzle {{v0}}", {
+                        v0: activeIndex + 1,
+                      })}
+                  </Text>
                   <Text size="sm" c="dimmed" mt="xs">
                     {exercise?.solutionLines.length
-                      ? "Encuentra y completa la continuación preparada."
-                      : "La jugada se validará con un motor local."}
+                      ? trainingT(
+                          "Training.Copy.Findandcompletetheprepared.14fd71f2",
+                          "Find and complete the prepared continuation.",
+                        )
+                      : trainingT(
+                          "Training.Copy.Themovewillbevalidated.da46d52c",
+                          "The move will be validated by a local engine.",
+                        )}
                   </Text>
                 </div>
                 {message && (
@@ -662,7 +733,8 @@ export default function TacticsSessionV2Page() {
                   leftSection={<IconSearch size={16} />}
                   onClick={analyzePosition}
                 >
-                  Analizar posición
+                  {" "}
+                  {trainingT("Training.Copy.Analyzeposition.7cd475fb", "Analyze position")}{" "}
                 </Button>
                 {result === "unsupported" && (
                   <Button
@@ -670,35 +742,44 @@ export default function TacticsSessionV2Page() {
                     leftSection={<IconRefresh size={16} />}
                     onClick={resetExerciseState}
                   >
-                    Reintentar
+                    {" "}
+                    {trainingT("Training.Copy.Retry.a9254c5f", "Retry")}{" "}
                   </Button>
                 )}
-                <Button
-                  disabled={result !== "correct"}
-                  leftSection={<IconPlayerSkipForward size={16} />}
-                  onClick={nextExercise}
-                >
-                  {isWoodpecker &&
-                  new Set([...currentCycleCompletedIndexes, activeIndex]).size >= total
-                    ? "Completando ciclo…"
-                    : browsingIndex !== null && browsingIndex !== resumeIndex
-                      ? "Volver al punto de reanudación"
-                      : "Siguiente problema"}
-                </Button>
+                <TacticsAdvanceControl
+                  autoAdvance={set.progress.autoAdvance}
+                  solved={result === "correct"}
+                  completesCycle={
+                    isWoodpecker &&
+                    new Set([...currentCycleCompletedIndexes, activeIndex]).size >= total
+                  }
+                  browsing={browsingIndex !== null && browsingIndex !== resumeIndex}
+                  exerciseKey={`${setId}:${activeIndex}:${boardAttempt}`}
+                  onNext={nextExercise}
+                />
               </Stack>
             </Card>
 
             <Card withBorder>
               <Stack>
-                <Text fw={600}>Navegación</Text>
+                <Text fw={600}>{trainingT("Training.Copy.Navigation.6d4ca0e8", "Navigation")}</Text>
                 {browsingIndex !== null && browsingIndex !== resumeIndex && (
                   <Alert color="blue" variant="light">
-                    Estás explorando otro problema. Tu reanudación sigue guardada en el problema{" "}
+                    {" "}
+                    {trainingT(
+                      "Training.Copy.Youareexploringanotherpuzzle.350787db",
+                      "You are exploring another puzzle. Your resume point is still saved at puzzle",
+                    )}{" "}
                     {resumeIndex + 1}.
                   </Alert>
                 )}
                 <Button variant="light" onClick={returnToResume} disabled={browsingIndex === null}>
-                  Volver al primer ejercicio sin completar · {resumeIndex + 1}
+                  {" "}
+                  {trainingT(
+                    "Training.Copy.Returntothefirstincomplete.30ef6874",
+                    "Return to the first incomplete exercise ·",
+                  )}{" "}
+                  {resumeIndex + 1}
                 </Button>
                 <Group grow>
                   <Button
@@ -707,7 +788,8 @@ export default function TacticsSessionV2Page() {
                     disabled={activeIndex === 0}
                     onClick={() => jumpTo(activeIndex - 1)}
                   >
-                    Anterior
+                    {" "}
+                    {trainingT("Training.Copy.Previous.e4ce7c09", "Previous")}{" "}
                   </Button>
                   <Button
                     variant="default"
@@ -715,12 +797,13 @@ export default function TacticsSessionV2Page() {
                     disabled={activeIndex + 1 >= total}
                     onClick={() => jumpTo(activeIndex + 1)}
                   >
-                    Siguiente
+                    {" "}
+                    {trainingT("Training.Copy.Next.49683b71", "Next")}{" "}
                   </Button>
                 </Group>
                 <Group align="flex-end" wrap="nowrap">
                   <NumberInput
-                    label="Ir al problema"
+                    label={trainingT("Training.Copy.Gotopuzzle.a6b5d4e1", "Go to puzzle")}
                     min={1}
                     max={total}
                     value={navigationValue}
@@ -731,12 +814,17 @@ export default function TacticsSessionV2Page() {
                     variant="default"
                     onClick={() => jumpTo(Number(navigationValue || 1) - 1)}
                   >
-                    Ir
+                    {" "}
+                    {trainingT("Training.Copy.Go.460edadf", "Go")}{" "}
                   </Button>
                 </Group>
                 <Select
-                  label="Problemas completados"
-                  placeholder={completedOptions.length ? "Elegir problema" : "Todavía ninguno"}
+                  label={trainingT("Training.Copy.Completedpuzzles.da5ea6b6", "Completed puzzles")}
+                  placeholder={
+                    completedOptions.length
+                      ? trainingT("Training.Copy.Choosepuzzle.5bdb94e5", "Choose puzzle")
+                      : trainingT("Training.Copy.Noneyet.91ed3180", "None yet")
+                  }
                   data={completedOptions}
                   disabled={completedOptions.length === 0}
                   searchable
@@ -744,7 +832,10 @@ export default function TacticsSessionV2Page() {
                   onChange={(value) => value !== null && jumpTo(Number(value))}
                 />
                 <Switch
-                  label="Avanzar automáticamente al acertar"
+                  label={trainingT(
+                    "Training.Copy.Advanceautomaticallyaftersolving.db958dbf",
+                    "Advance automatically after solving",
+                  )}
                   checked={set.progress.autoAdvance}
                   onChange={(event) =>
                     setAreas((previous) => ({
@@ -764,20 +855,32 @@ export default function TacticsSessionV2Page() {
               <Card withBorder>
                 <Stack>
                   <Group justify="space-between">
-                    <Text fw={600}>Ciclo {cycleNumber}</Text>
-                    <Badge>{failures} fallos</Badge>
+                    <Text fw={600}>
+                      {trainingT("Training.Copy.Cycle.4b8c1a8a", "Cycle")} {cycleNumber}
+                    </Text>
+                    <Badge>
+                      {failures} {trainingT("Training.Copy.mistakes.5fb1604c", "mistakes")}
+                    </Badge>
                   </Group>
                   <Text size="sm" c="dimmed">
-                    El tiempo y los fallos se registran, pero no detienen el entrenamiento.
+                    {" "}
+                    {trainingT(
+                      "Training.Copy.Timeandmistakesarerecorded.8687b811",
+                      "Time and mistakes are recorded but do not stop training.",
+                    )}{" "}
                   </Text>
                   {set.progress.cycles
                     .slice(-3)
                     .reverse()
                     .map((cycle) => (
                       <Group key={cycle.id} justify="space-between">
-                        <Text size="xs">Ciclo {cycle.number}</Text>
+                        <Text size="xs">
+                          {trainingT("Training.Copy.Cycle.4b8c1a8a", "Cycle")} {cycle.number}
+                        </Text>
                         <Text size="xs" c="dimmed">
-                          {cycle.failures} fallos · {formatTime(cycle.timeMs)}
+                          {cycle.failures}{" "}
+                          {trainingT("Training.Copy.mistakes.5c65c76e", "mistakes ·")}{" "}
+                          {formatTime(cycle.timeMs)}
                         </Text>
                       </Group>
                     ))}
@@ -790,17 +893,24 @@ export default function TacticsSessionV2Page() {
         <Modal
           opened={earlyFinishOpen}
           onClose={() => setEarlyFinishOpen(false)}
-          title="Terminar el ciclo antes de completar el set"
+          title={trainingT(
+            "Training.Copy.Endthecyclebeforecompleting.c2e29d9c",
+            "End the cycle before completing the set",
+          )}
           size="sm"
         >
           <Stack>
             <Alert color="red" icon={<IconAlertTriangle size={18} />}>
-              Esta es una acción excepcional. El ciclo se guardará incompleto con el progreso y los
-              fallos actuales; el próximo ciclo volverá a incluir el set completo.
+              {" "}
+              {trainingT(
+                "Training.Copy.Thecyclewillbesaved.47fad844",
+                "The cycle will be saved as incomplete with its current progress and mistakes. The next cycle will include the entire set again.",
+              )}{" "}
             </Alert>
             <Group justify="flex-end">
               <Button variant="default" onClick={() => setEarlyFinishOpen(false)}>
-                Seguir entrenando
+                {" "}
+                {trainingT("Training.Copy.Keeptraining.533691ba", "Keep training")}{" "}
               </Button>
               <Button
                 color="red"
@@ -809,7 +919,8 @@ export default function TacticsSessionV2Page() {
                   finishCycle();
                 }}
               >
-                Terminar de todos modos
+                {" "}
+                {trainingT("Training.Copy.Endanyway.3b347291", "End anyway")}{" "}
               </Button>
             </Group>
           </Stack>
@@ -820,10 +931,16 @@ export default function TacticsSessionV2Page() {
 }
 
 function MissingSet() {
+  const { t: trainingT } = useTrainingTranslation();
+
   return (
     <Container size="md" py="xl">
-      <Alert color="red" title="Set no encontrado">
-        El set de Táctica ya no existe o no contiene problemas.
+      <Alert color="red" title={trainingT("Training.Copy.Setnotfound.63b73336", "Set not found")}>
+        {" "}
+        {trainingT(
+          "Training.Copy.Thetacticssetnolonger.55f1a175",
+          "The tactics set no longer exists or contains no puzzles.",
+        )}{" "}
       </Alert>
       <Button
         component={Link}
@@ -831,7 +948,8 @@ function MissingSet() {
         mt="md"
         leftSection={<IconArrowLeft size={16} />}
       >
-        Volver a Táctica
+        {" "}
+        {trainingT("Training.Copy.Backtotactics.8239d676", "Back to tactics")}{" "}
       </Button>
     </Container>
   );
@@ -973,6 +1091,8 @@ function EngineTacticsBoard({
     feedback: string,
   ) => void;
 }) {
+  const { t: trainingT } = useTrainingTranslation();
+
   const storedEngines = useAtomValue(enginesAtom);
   const engines = useMemo(() => storedEngines ?? [], [storedEngines]);
   const [busy, setBusy] = useState(false);
@@ -990,7 +1110,10 @@ function EngineTacticsBoard({
       onResult(
         "unsupported",
         playedMove,
-        "Configura Stockfish u otro motor local para validar este problema.",
+        trainingT(
+          "Training.Copy.SetupStockfishoranother.cb95b179",
+          "Set up Stockfish or another local engine to validate this puzzle.",
+        ),
       );
       return;
     }
@@ -1012,13 +1135,23 @@ function EngineTacticsBoard({
       onResult(
         correct ? "correct" : "incorrect",
         playedMove,
-        correct ? "Jugada aceptada por el motor." : "",
+        correct
+          ? trainingT(
+              "Training.Copy.Moveacceptedbytheengine.e7c93b94",
+              "Move accepted by the engine.",
+            )
+          : "",
       );
     } catch (error) {
       onResult(
         "unsupported",
         playedMove,
-        error instanceof Error ? error.message : "No se pudo consultar el motor.",
+        error instanceof Error
+          ? error.message
+          : trainingT(
+              "Training.Copy.Couldnotquerytheengine.de1b61cd",
+              "Could not query the engine.",
+            ),
       );
     } finally {
       setBusy(false);

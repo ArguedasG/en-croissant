@@ -9,7 +9,7 @@ function PlayerCard({ player, file }: { player: Player; file: string }) {
   const { t } = useTranslation();
   const { data: info, isLoading } = useSWRImmutable(
     ["player-game-info", file, player.id],
-    async ([key, file, id]) => {
+    async ([_key, file, id]) => {
       const games = await commands.getPlayersGameInfo(file, id);
       return unwrap(games);
     },
@@ -27,7 +27,21 @@ function PlayerCard({ player, file }: { player: Player; file: string }) {
           </Center>
         </Paper>
       )}
-      {info && <PersonalPlayerCard name={player.name!} info={info} isDatabase />}
+      {info && (
+        <PersonalPlayerCard
+          name={player.name!}
+          info={info}
+          isDatabase
+          analysisSources={[
+            {
+              databasePath: file,
+              databaseTitle: file.split(/[\\/]/).at(-1) || file,
+              playerId: player.id,
+              playerName: player.name || "Unknown",
+            },
+          ]}
+        />
+      )}
     </>
   );
 }

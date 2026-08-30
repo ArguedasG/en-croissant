@@ -1,9 +1,15 @@
 mod encoding;
 mod models;
+mod opening_report;
 mod ops;
+mod position_query;
 mod schema;
 mod search;
 mod search_index;
+pub use opening_report::generate_opening_report;
+pub use position_query::{
+    get_position_game, get_position_games, query_position, PositionQueryCache,
+};
 
 use crate::{
     db::{
@@ -44,7 +50,7 @@ use std::{
     io::{BufWriter, Write},
     str::FromStr,
 };
-use tauri::{Emitter, State};
+use tauri::Emitter;
 
 use log::info;
 use tauri_specta::Event as _;
@@ -59,7 +65,10 @@ pub use self::models::Puzzle;
 pub use self::schema::puzzle_themes;
 pub use self::schema::puzzles;
 pub use self::schema::themes;
-pub use self::search::{is_position_in_db, search_position, PositionQueryJs, PositionStats};
+pub use self::search::{
+    cancel_position_search, is_position_in_db, search_position, ActivePositionSearches,
+    PositionQueryJs, PositionSearchCache,
+};
 
 const DATABASE_VERSION: &str = "1.0.0";
 
@@ -146,7 +155,7 @@ impl diesel::r2d2::CustomizeConnection<SqliteConnection, diesel::r2d2::Error>
 }
 
 fn get_db_or_create(
-    state: &State<AppState>,
+    state: &AppState,
     db_path: &str,
     options: ConnectionOptions,
 ) -> Result<
@@ -171,18 +180,29 @@ fn get_db_or_create(
 }
 
 fn clear_search_cache_for_db(state: &AppState, db_path: &Path) {
+    let canonical = db_path
+        .canonicalize()
+        .unwrap_or_else(|_| db_path.to_path_buf());
     let mut cache = state.db_cache.lock().unwrap();
-    if cache
-        .as_ref()
-        .is_some_and(|(cached_path, _)| cached_path.as_path() == db_path)
-    {
+    if cache.as_ref().is_some_and(|(cached_path, _)| {
+        cached_path.as_path() == db_path || *cached_path == canonical
+    }) {
         *cache = None;
     }
     drop(cache);
 
+    state.line_cache.lock().unwrap().remove_database(db_path);
+    state.line_cache.lock().unwrap().remove_database(&canonical);
     state
-        .line_cache
-        .retain(|(_, cached_path), _| cached_path.as_path() != db_path);
+        .position_queries
+        .lock()
+        .unwrap()
+        .remove_database(db_path);
+    state
+        .position_queries
+        .lock()
+        .unwrap()
+        .remove_database(&canonical);
 }
 
 fn invalidate_search_index(state: &AppState, db_path: &Path) -> Result<(), Error> {
@@ -722,100 +742,80 @@ pub async fn convert_pgn(
     Ok(())
 }
 
-pub fn generate_search_index(
+pub fn generate_search_index(db_path: &Path, state: &AppState) -> Result<(), Error> {
+    generate_search_index_cancellable(db_path, state, &|| false, &|_| {})
+}
+
+pub(super) fn generate_search_index_cancellable(
     db_path: &Path,
-    state: &tauri::State<'_, AppState>,
+    state: &AppState,
+    cancelled: &dyn Fn() -> bool,
+    progress: &dyn Fn(u64),
 ) -> Result<(), Error> {
     clear_search_cache_for_db(state, db_path);
-    let db = &mut get_db_or_create(
-        state,
-        db_path.to_str().unwrap(),
-        ConnectionOptions::default(),
+    let before = position_query::source_stamp(db_path)?;
+    let connection =
+        rusqlite::Connection::open_with_flags(db_path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)?;
+    connection.busy_timeout(Duration::from_secs(2))?;
+    let mut statement = connection.prepare(
+        "SELECT ID, WhiteID, BlackID, Date, Result, Moves, FEN, PawnHome, WhiteMaterial,
+         BlackMaterial, WhiteElo, BlackElo FROM Games ORDER BY ID",
     )?;
-    let index_path = get_index_path(db_path);
-
-    info!("Generating search index at {:?}", index_path);
-    let start = Instant::now();
-
-    let load_start = Instant::now();
-    let games: Vec<(
-        i32,
-        i32,
-        i32,
-        Option<String>,
-        Option<String>,
-        Vec<u8>,
-        Option<String>,
-        i32,
-        i32,
-        i32,
-        Option<i32>,
-        Option<i32>,
-    )> = games::table
-        .select((
-            games::id,
-            games::white_id,
-            games::black_id,
-            games::date,
-            games::result,
-            games::moves,
-            games::fen,
-            games::pawn_home,
-            games::white_material,
-            games::black_material,
-            games::white_elo,
-            games::black_elo,
-        ))
-        .load(db)?;
-    info!(
-        "Loaded {} games for search indexing in {:?}",
-        games.len(),
-        load_start.elapsed()
-    );
-
-    let mut writer = SearchIndex::with_capacity(games.len());
-    for (
-        id,
-        white_id,
-        black_id,
-        date,
-        result,
-        moves,
-        fen,
-        pawn_home,
-        white_material,
-        black_material,
-        white_elo,
-        black_elo,
-    ) in games
-    {
+    let mut rows = statement.query([])?;
+    let mut writer =
+        search_index::SearchIndexWriter::with_source(&get_index_path(db_path), &before)?;
+    let mut batch = SearchIndex::with_capacity(search_index::INDEX_BATCH_SIZE);
+    let mut batch_bytes = 0usize;
+    let mut loaded = 0u64;
+    while let Some(row) = rows.next()? {
+        if cancelled() {
+            return Err(Error::SearchCancelled);
+        }
         let entry = SearchGameEntry::from_game_data(
-            id,
-            white_id,
-            black_id,
-            date,
-            result,
-            moves,
-            fen,
-            pawn_home,
-            white_material,
-            black_material,
-            white_elo,
-            black_elo,
+            row.get(0)?,
+            row.get(1)?,
+            row.get(2)?,
+            row.get(3)?,
+            row.get(4)?,
+            row.get(5)?,
+            row.get(6)?,
+            row.get(7)?,
+            row.get(8)?,
+            row.get(9)?,
+            row.get(10)?,
+            row.get(11)?,
         );
-        writer.push(entry);
+        // Bound individual records as well as the number of records in a block.
+        if entry.moves.len() > 16 * 1024 * 1024 {
+            return Err(
+                std::io::Error::other("Game exceeds search index record limit (16 MiB)").into(),
+            );
+        }
+        batch_bytes += entry.moves.len()
+            + entry.fen.as_ref().map_or(0, String::len)
+            + entry.date.as_ref().map_or(0, String::len)
+            + 64;
+        batch.push(entry);
+        loaded += 1;
+        if batch.entries.len() == search_index::INDEX_BATCH_SIZE || batch_bytes >= 8 * 1024 * 1024 {
+            writer.write_batch(&batch)?;
+            batch.entries.clear();
+            batch_bytes = 0;
+            progress(loaded);
+        }
     }
-    writer.write_to(&index_path)?;
-
-    let index_size = index_path
-        .metadata()
-        .map(|metadata| metadata.len())
-        .unwrap_or(0);
-    info!(
-        "Search index generated in {:?} ({} bytes)",
-        start.elapsed(),
-        index_size
-    );
+    if !batch.entries.is_empty() {
+        writer.write_batch(&batch)?;
+    }
+    if cancelled() {
+        return Err(Error::SearchCancelled);
+    }
+    if before != position_query::source_stamp(db_path)? {
+        return Err(std::io::Error::other("Database changed during indexing; retry").into());
+    }
+    writer.finish()?;
+    progress(loaded);
+    info!("Search index built in bounded blocks; games={loaded}");
     Ok(())
 }
 
@@ -1016,6 +1016,11 @@ pub struct GameQuery {
     pub player1: Option<i32>,
     #[specta(optional)]
     pub player2: Option<i32>,
+    // Position-query filter for a player with either color. Regular database queries keep using `sides`.
+    #[specta(optional)]
+    pub any_player: Option<i32>,
+    #[specta(optional)]
+    pub game_id: Option<i32>,
     #[specta(optional)]
     pub tournament_id: Option<i32>,
     #[specta(optional)]
@@ -1072,6 +1077,11 @@ pub async fn get_games(
         .inner_join(sites::table.on(games::site_id.eq(sites::id)))
         .into_boxed();
     let mut count_query = games::table.into_boxed();
+
+    if let Some(game_id) = query.game_id {
+        sql_query = sql_query.filter(games::id.eq(game_id));
+        count_query = count_query.filter(games::id.eq(game_id));
+    }
 
     // if let Some(speed) = query.speed {
     //     sql_query = sql_query.filter(games::speed.eq(speed as i32));
@@ -1262,6 +1272,7 @@ fn normalize_games(games: Vec<(Game, Player, Player, Event, Site)>) -> Vec<Norma
                 .fen
                 .map(|f| Fen::from_ascii(f.as_bytes()).unwrap())
                 .unwrap_or_default();
+            let opening = opening_from_encoded_moves(&game.moves, &fen);
             let game_result = game.result.clone().unwrap_or_default();
             let result_token = if game_result.is_empty() {
                 "*".to_string()
@@ -1287,6 +1298,7 @@ fn normalize_games(games: Vec<(Game, Player, Player, Event, Site)>) -> Vec<Norma
                 result: Outcome::from_str(&game_result).unwrap_or_default(),
                 time_control: game.time_control,
                 eco: game.eco,
+                opening,
                 ply_count: game.ply_count,
                 fen: fen.to_string(),
                 moves: {
@@ -1300,6 +1312,22 @@ fn normalize_games(games: Vec<(Game, Player, Player, Event, Site)>) -> Vec<Norma
             }
         })
         .collect()
+}
+
+fn opening_from_encoded_moves(moves: &[u8], initial_fen: &Fen) -> Option<String> {
+    let mut chess =
+        Chess::from_setup(initial_fen.clone().into_setup(), CastlingMode::Chess960).ok()?;
+    let mut opening = None;
+    for byte in iter_mainline_move_bytes(moves).take(55) {
+        let Some(next) = decode_move(byte, &chess) else {
+            break;
+        };
+        chess.play_unchecked(&next);
+        if let Ok(name) = get_opening_from_setup(chess.clone().into_setup(EnPassantMode::Legal)) {
+            opening = Some(name);
+        }
+    }
+    opening
 }
 
 #[derive(Debug, Clone, Deserialize, Type)]
@@ -2156,6 +2184,28 @@ mod tests {
         assert_eq!(movetext, "1. e4! (1. d4?) 1... e5!");
     }
 
+    #[test]
+    fn normalized_games_derive_the_opening_name_from_moves_without_an_eco_header() {
+        let pgn = r#"[Event "T"]
+[Site "S"]
+[White "W"]
+[Black "B"]
+[Result "*"]
+
+1. e4 c6 2. d4 d5 *
+"#;
+        let mut importer = Importer::new(None);
+        let games: Vec<TempGame> = BufferedReader::new(pgn.as_bytes())
+            .into_iter(&mut importer)
+            .flatten()
+            .flatten()
+            .collect();
+
+        assert_eq!(games[0].eco, None);
+        assert!(opening_from_encoded_moves(&games[0].moves, &Fen::default())
+            .is_some_and(|opening| opening.contains("Caro-Kann")));
+    }
+
     fn setup_test_db() -> SqliteConnection {
         let mut conn = SqliteConnection::establish(":memory:").unwrap();
         conn.batch_execute("PRAGMA foreign_keys = ON;").unwrap();
@@ -2212,13 +2262,15 @@ mod tests {
             Some((db_path.clone(), MmapSearchIndex::open(&index_path).unwrap()));
         state
             .line_cache
+            .lock()
+            .unwrap()
             .insert((GameQuery::default(), db_path.clone()), (vec![], vec![]));
 
         invalidate_search_index(&state, &db_path).unwrap();
 
         assert!(!index_path.exists());
         assert!(state.db_cache.lock().unwrap().is_none());
-        assert!(state.line_cache.is_empty());
+        assert!(state.line_cache.lock().unwrap().is_empty());
     }
 
     #[test]

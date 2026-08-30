@@ -1,15 +1,18 @@
-import { ActionIcon, Button, Menu } from "@mantine/core";
+import { ActionIcon, Button, Group, Menu } from "@mantine/core";
 import { useClickOutside, useHotkeys, useToggle } from "@mantine/hooks";
 import {
   IconChess,
+  IconArrowBackUp,
   IconCopy,
   IconDatabase,
   IconEdit,
   IconFlask,
   IconPuzzle,
+  IconTarget,
   IconX,
   IconZoomCheck,
 } from "@tabler/icons-react";
+import { useNavigate } from "@tanstack/react-router";
 import cx from "clsx";
 import { useEffect } from "react";
 import type { Tab } from "@/utils/tabs";
@@ -36,6 +39,8 @@ export function BoardTab({
   selected: boolean;
 }) {
   const { t } = useTranslation();
+  const navigate = useNavigate();
+  const returnPath = tab.returnPath;
   const [open, toggleOpen] = useToggle();
   const [renaming, toggleRenaming] = useToggle();
 
@@ -68,17 +73,36 @@ export function BoardTab({
           radius={0}
           leftSection={<TabIcon tab={tab} tabType={tabType} />}
           rightSection={
-            <ActionIcon
-              component="div"
-              className={classes.closeTabBtn}
-              onClick={(e) => {
-                closeTab(tab.value);
-                e.stopPropagation();
-              }}
-              size="0.875rem"
-            >
-              <IconX />
-            </ActionIcon>
+            <Group gap={3} wrap="nowrap">
+              {returnPath && (
+                <ActionIcon
+                  component="div"
+                  className={classes.closeTabBtn}
+                  aria-label={t("PlayerAnalysis.ReturnToAnalysis", "Return to Player Analysis")}
+                  onPointerDown={(event) => event.stopPropagation()}
+                  onClick={(event) => {
+                    void navigate({ to: returnPath });
+                    event.stopPropagation();
+                  }}
+                  size="0.875rem"
+                >
+                  <IconArrowBackUp />
+                </ActionIcon>
+              )}
+              <ActionIcon
+                component="div"
+                className={classes.closeTabBtn}
+                aria-label={`${t("Common.Close", "Close")}: ${t(tab.name, { defaultValue: tab.name })}`}
+                onPointerDown={(e) => e.stopPropagation()}
+                onClick={(e) => {
+                  closeTab(tab.value);
+                  e.stopPropagation();
+                }}
+                size="0.875rem"
+              >
+                <IconX />
+              </ActionIcon>
+            </Group>
           }
           onPointerDown={(e) => {
             if (e.button === 0) setActiveTab(tab.value);
@@ -131,6 +155,9 @@ export function BoardTab({
 }
 
 function TabIcon({ tab, tabType }: { tab: Tab; tabType: string }) {
+  if (tabType === "training") {
+    return <IconTarget size="0.875rem" />;
+  }
   if (tabType === "puzzles") {
     return <IconPuzzle size="0.875rem" />;
   }

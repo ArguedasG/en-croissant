@@ -23,6 +23,8 @@ export async function computeTreeCoverage(
     dbPath: string,
     minGames: number,
     startPath: number[] = [],
+    signal?: AbortSignal,
+    owner = `coverage:${crypto.randomUUID()}`,
 ): Promise<{
     coverageMap: Map<string, number>;
     gamesMap: Map<string, number>;
@@ -38,40 +40,42 @@ export async function computeTreeCoverage(
     async function getDbMoves(
         fen: string,
     ): Promise<{ moves: { move: string; games: number }[]; total: number }> {
-        try {
-            const [openings] = await searchPosition(
-                {
-                    path: dbPath,
-                    type: "exact",
-                    fen,
-                    color: "white",
-                    player: null,
-                    result: "any",
-                } as LocalOptions,
-                "coverage-calc",
-            );
+        signal?.throwIfAborted();
+        const [openings] = await searchPosition(
+            {
+                path: dbPath,
+                type: "exact",
+                fen,
+                color: "white",
+                player: null,
+                result: "any",
+            } as LocalOptions,
+            owner,
+            signal,
+            true,
+        );
 
-            const summary = openings.find((op) => op.move === "*");
-            const moves = openings
-                .filter((op) => op.move !== "*")
-                .map((op) => ({
-                    move: op.move,
-                    games: op.white + op.draw + op.black,
-                }));
+        const summary = openings.find((op) => op.move === "*");
+        const moves = openings
+            .filter((op) => op.move !== "*")
+            .map((op) => ({
+                move: op.move,
+                games: op.white + op.draw + op.black + (op.unknown ?? 0),
+            }));
 
-            const gamesEndingHere = summary ? summary.white + summary.draw + summary.black : 0;
+        const gamesEndingHere = summary
+            ? summary.white + summary.draw + summary.black + (summary.unknown ?? 0)
+            : 0;
 
-            const gamesContinuing = moves.reduce((acc, m) => acc + m.games, 0);
+        const gamesContinuing = moves.reduce((acc, m) => acc + m.games, 0);
 
-            const total = gamesEndingHere + gamesContinuing;
+        const total = gamesEndingHere + gamesContinuing;
 
-            return { moves, total };
-        } catch {
-            return { moves: [], total: 0 };
-        }
+        return { moves, total };
     }
 
     async function compute(node: TreeNode, path: number[]): Promise<number> {
+        signal?.throwIfAborted();
         const pathKey = path.join(",");
 
         if (node.children.length === 0 && fenCoverageCache.has(node.fen)) {

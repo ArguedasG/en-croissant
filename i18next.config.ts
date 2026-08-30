@@ -20,6 +20,8 @@ export default defineConfig({
         "de-DE",
     ],
     extract: {
+        functions: ["t", "*.t", "trainingT"],
+        useTranslationNames: ["useTranslation", "useTrainingTranslation"],
         input: ["src/**/*.{ts,tsx}"],
         output: "src/translation/{{language}}.json",
         ignore: ["src/translation/**"],

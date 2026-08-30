@@ -1,3 +1,5 @@
+import { useTranslation as useTrainingTranslation } from "react-i18next";
+import i18n from "i18next";
 import {
   ActionIcon,
   Alert,
@@ -57,20 +59,20 @@ import {
 } from "@/utils/training";
 import { parseTrainingInput } from "@/utils/trainingImport";
 
-const kindOptions = [
-  { value: "puzzle", label: "Táctica / puzzle" },
-  { value: "opening", label: "Apertura" },
-  { value: "endgame", label: "Final" },
+const getKindOptions = (trainingT: typeof i18n.t = i18n.t) => [
+  { value: "puzzle", label: trainingT("Training.Copy.Tacticspuzzle.459ef2b0", "Tactics / puzzle") },
+  { value: "opening", label: trainingT("Training.Copy.Opening.cba19243", "Opening") },
+  { value: "endgame", label: trainingT("Training.Copy.Endgame.f4ed8fa6", "Endgame") },
 ];
 
-const collectionKindOptions = [{ value: "mixed", label: "Mixta · provisional" }, ...kindOptions];
-
-const outcomeLabels: Record<TrainingAttemptOutcome, string> = {
-  correct: "Correcto",
-  incorrect: "Incorrecto",
-  skipped: "Omitido",
-  incomplete: "Incompleto",
-};
+const getOutcomeLabels = (
+  trainingT: typeof i18n.t = i18n.t,
+): Record<TrainingAttemptOutcome, string> => ({
+  correct: trainingT("Training.Copy.Correct.e98f5156", "Correct"),
+  incorrect: trainingT("Training.Copy.Incorrect.bac5ee43", "Incorrect"),
+  skipped: trainingT("Training.Copy.Skipped.b2749bdf", "Skipped"),
+  incomplete: trainingT("Training.Copy.Incomplete.aa82b7c2", "Incomplete"),
+});
 
 function splitTags(value: string): string[] {
   return [
@@ -83,8 +85,8 @@ function splitTags(value: string): string[] {
   ];
 }
 
-function kindLabel(kind: TrainingKind): string {
-  return kindOptions.find((option) => option.value === kind)?.label ?? kind;
+function kindLabel(kind: TrainingKind, trainingT: typeof i18n.t = i18n.t): string {
+  return getKindOptions(trainingT).find((option) => option.value === kind)?.label ?? kind;
 }
 
 function formatDate(value: string): string {
@@ -95,6 +97,14 @@ function formatDate(value: string): string {
 }
 
 export default function TrainingPage() {
+  const { t: trainingT } = useTrainingTranslation();
+  const kindOptions = getKindOptions(trainingT);
+  const collectionKindOptions = [
+    { value: "mixed", label: trainingT("Training.Copy.Mixed.31b7e97d", "Mixed") },
+    ...kindOptions,
+  ];
+  const outcomeLabels = getOutcomeLabels(trainingT);
+
   const navigate = useNavigate();
   const [library, setLibrary] = useAtom(trainingLibraryAtom);
   const [, setTabs] = useAtom(tabsAtom);
@@ -162,7 +172,13 @@ export default function TrainingPage() {
 
   async function importPosition() {
     if (!selectedCollection) {
-      showFeedback("Crea o selecciona una colección primero.", "red");
+      showFeedback(
+        trainingT(
+          "Training.Copy.Createorselectacollection.e96d60b4",
+          "Create or select a collection first.",
+        ),
+        "red",
+      );
       return;
     }
 
@@ -180,10 +196,20 @@ export default function TrainingPage() {
       setImportTitle("");
       setImportTags("");
       setImportNotes("");
-      showFeedback(`Añadido a «${selectedCollection.name}»: ${parsed.sourceDescription}.`);
+      showFeedback(
+        trainingT("Training.Copy.Addedtov0v1.fa8dceab", "Added to “{{v0}}”: {{v1}}.", {
+          v0: selectedCollection.name,
+          v1: parsed.sourceDescription,
+        }),
+      );
     } catch (error) {
       showFeedback(
-        error instanceof Error ? error.message : "No se pudo importar la posición.",
+        error instanceof Error
+          ? error.message
+          : trainingT(
+              "Training.Copy.Couldnotimporttheposition.64425c0e",
+              "Could not import the position.",
+            ),
         "red",
       );
     } finally {
@@ -195,12 +221,24 @@ export default function TrainingPage() {
     if (!selectedCollection) return;
     const result = createTrainingSession(library, selectedCollection.id, "all");
     if (!result) {
-      showFeedback("La colección necesita al menos una posición.", "yellow");
+      showFeedback(
+        trainingT(
+          "Training.Copy.Thecollectionneedsatleast.067858d6",
+          "The collection needs at least one position.",
+        ),
+        "yellow",
+      );
       return;
     }
     setLibrary(result.library);
     setActiveSessionId(result.session.id);
-    showFeedback(`Sesión iniciada con ${result.session.itemIds.length} posiciones.`);
+    showFeedback(
+      trainingT(
+        "Training.Copy.Sessionstartedwithv0positions.af0940d3",
+        "Session started with {{v0}} positions.",
+        { v0: result.session.itemIds.length },
+      ),
+    );
   }
 
   function recordOutcome(itemId: string, outcome: TrainingAttemptOutcome) {
@@ -217,7 +255,11 @@ export default function TrainingPage() {
         timeMs: 1000,
       }),
     );
-    showFeedback(`Intento registrado: ${outcomeLabels[outcome].toLowerCase()}.`);
+    showFeedback(
+      trainingT("Training.Copy.Attemptrecordedv0.662c0454", "Attempt recorded: {{v0}}.", {
+        v0: outcomeLabels[outcome].toLowerCase(),
+      }),
+    );
   }
 
   async function openItem(item: TrainingItem) {
@@ -237,10 +279,17 @@ export default function TrainingPage() {
   }
 
   async function deleteItem(item: TrainingItem) {
-    const confirmed = await ask(`¿Eliminar «${item.title}» de la biblioteca?`, {
-      title: "Eliminar posición",
-      kind: "warning",
-    });
+    const confirmed = await ask(
+      trainingT(
+        "Training.Copy.Removev0fromthelibrary.00275163",
+        "Remove “{{v0}}” from the library?",
+        { v0: item.title },
+      ),
+      {
+        title: trainingT("Training.Copy.Deleteposition.c3cad629", "Delete position"),
+        kind: "warning",
+      },
+    );
     if (!confirmed) return;
     setLibrary((previous) => removeTrainingItem(previous, item.id));
   }
@@ -252,7 +301,12 @@ export default function TrainingPage() {
     });
     if (!path) return;
     await writeTextFile(path, serializeTrainingLibrary(library));
-    showFeedback("Backup exportado correctamente.");
+    showFeedback(
+      trainingT(
+        "Training.Copy.Backupexportedsuccessfully.d203707a",
+        "Backup exported successfully.",
+      ),
+    );
   }
 
   async function importBackup() {
@@ -265,15 +319,32 @@ export default function TrainingPage() {
     try {
       const imported = parseTrainingBackup(await readTextFile(selected));
       const confirmed = await ask(
-        `Se reemplazarán ${Object.keys(library.items).length} posiciones por ${Object.keys(imported.items).length} del backup.`,
-        { title: "Importar backup", kind: "warning" },
+        trainingT(
+          "Training.Copy.v0positionswillbereplaced.6dc6ae10",
+          "{{v0}} positions will be replaced with {{v1}} from the backup.",
+          { v0: Object.keys(library.items).length, v1: Object.keys(imported.items).length },
+        ),
+        {
+          title: trainingT("Training.Copy.Importbackup.214bdca3", "Import backup"),
+          kind: "warning",
+        },
       );
       if (!confirmed) return;
       setLibrary(imported);
       setActiveSessionId(null);
-      showFeedback("Backup importado correctamente.");
+      showFeedback(
+        trainingT(
+          "Training.Copy.Backupimportedsuccessfully.bee32bb6",
+          "Backup imported successfully.",
+        ),
+      );
     } catch (error) {
-      showFeedback(error instanceof Error ? error.message : "El backup no es válido.", "red");
+      showFeedback(
+        error instanceof Error
+          ? error.message
+          : trainingT("Training.Copy.Thebackupisinvalid.fea8d635", "The backup is invalid."),
+        "red",
+      );
     }
   }
 
@@ -282,22 +353,29 @@ export default function TrainingPage() {
       <Stack gap="lg">
         <Group justify="space-between" align="flex-start">
           <div>
-            <Title order={2}>Biblioteca técnica provisional</Title>
+            <Title order={2}>
+              {trainingT("Training.Copy.Positionlibrary.9e9f1828", "Position library")}
+            </Title>
             <Text c="dimmed" maw={720} mt={4}>
-              Herramienta de infraestructura para importar y respaldar posiciones. Las experiencias
-              reales de Táctica, Aperturas y Finales están separadas en el centro de Entrenamiento.
+              {" "}
+              {trainingT(
+                "Training.Copy.Importandbackuppositions.57a92b46",
+                "Import and back up positions here. Open Tactics, Openings, or Endgames in Training to practice.",
+              )}{" "}
             </Text>
           </div>
           <Group>
             <Button variant="default" leftSection={<IconUpload size={16} />} onClick={importBackup}>
-              Importar backup
+              {" "}
+              {trainingT("Training.Copy.Importbackup.214bdca3", "Import backup")}{" "}
             </Button>
             <Button
               variant="default"
               leftSection={<IconDownload size={16} />}
               onClick={exportBackup}
             >
-              Exportar backup
+              {" "}
+              {trainingT("Training.Copy.Exportbackup.435d4fc4", "Export backup")}{" "}
             </Button>
           </Group>
         </Group>
@@ -305,16 +383,33 @@ export default function TrainingPage() {
         {feedback && <Alert color={feedback.color}>{feedback.message}</Alert>}
 
         <SimpleGrid cols={{ base: 2, sm: 4 }}>
-          <StatCard label="Posiciones" value={selectedCollectionStats.total} />
-          <StatCard label="Practicadas" value={selectedCollectionStats.practiced} />
-          <StatCard label="Correctas" value={selectedCollectionStats.correct} color="teal" />
-          <StatCard label="Incorrectas" value={selectedCollectionStats.incorrect} color="red" />
+          <StatCard
+            label={trainingT("Training.Copy.Positions.94572a03", "Positions")}
+            value={selectedCollectionStats.total}
+          />
+          <StatCard
+            label={trainingT("Training.Copy.Practiced.bc0d2935", "Practiced")}
+            value={selectedCollectionStats.practiced}
+          />
+          <StatCard
+            label={trainingT("Training.Copy.Correct.7d636b05", "Correct")}
+            value={selectedCollectionStats.correct}
+            color="teal"
+          />
+          <StatCard
+            label={trainingT("Training.Copy.Incorrect.defc9404", "Incorrect")}
+            value={selectedCollectionStats.incorrect}
+            color="red"
+          />
         </SimpleGrid>
 
         <Group align="flex-end">
           <Select
-            label="Colección activa"
-            placeholder="Selecciona una colección"
+            label={trainingT("Training.Copy.Activecollection.cbe4440d", "Active collection")}
+            placeholder={trainingT(
+              "Training.Copy.Selectacollection.6cf2ce0a",
+              "Select a collection",
+            )}
             data={collections.map((collection) => ({
               value: collection.id,
               label: `${collection.name} · ${collection.itemIds.length}`,
@@ -327,7 +422,8 @@ export default function TrainingPage() {
             leftSection={<IconPlus size={16} />}
             onClick={() => setCollectionModalOpened(true)}
           >
-            Nueva colección
+            {" "}
+            {trainingT("Training.Copy.Newcollection.ea27a47a", "New collection")}{" "}
           </Button>
           <Button
             variant="light"
@@ -335,19 +431,23 @@ export default function TrainingPage() {
             disabled={!selectedCollection || selectedCollection.itemIds.length === 0}
             onClick={startSession}
           >
-            Iniciar sesión
+            {" "}
+            {trainingT("Training.Copy.Startsession.8d518bb6", "Start session")}{" "}
           </Button>
         </Group>
 
         {activeSessionId && (
           <Alert
             icon={<IconPlayerPlay size={18} />}
-            title="Sesión activa"
+            title={trainingT("Training.Copy.Activesession.43a35f7c", "Active session")}
             withCloseButton
             onClose={() => setActiveSessionId(null)}
           >
-            Registra el resultado de cada posición después de trabajarla en el tablero. Los intentos
-            quedan asociados a esta sesión.
+            {" "}
+            {trainingT(
+              "Training.Copy.Recordtheresultofeach.105a879c",
+              "Record the result of each position after working on it. Attempts are linked to this session.",
+            )}{" "}
           </Alert>
         )}
 
@@ -356,48 +456,64 @@ export default function TrainingPage() {
             <Stack>
               <Group justify="space-between">
                 <div>
-                  <Title order={4}>Añadir contenido</Title>
+                  <Title order={4}>
+                    {trainingT("Training.Copy.Addcontent.0d729f3c", "Add content")}
+                  </Title>
                   <Text size="sm" c="dimmed">
-                    Pega una FEN para una posición o un PGN para conservar su línea principal.
+                    {" "}
+                    {trainingT(
+                      "Training.Copy.PasteaFENpositionor.9e98dcf5",
+                      "Paste a FEN position or a PGN to keep its main line.",
+                    )}{" "}
                   </Text>
                 </div>
                 <IconArchive size={24} color="var(--mantine-color-blue-5)" />
               </Group>
               <Select
-                label="Tipo"
+                label={trainingT("Training.Copy.Type.3868d284", "Type")}
                 data={kindOptions}
                 value={importKind}
                 onChange={(value) => value && setImportKind(value as TrainingKind)}
               />
               <TextInput
-                label="Título"
-                placeholder="Ej. Mate en dos: desviación"
+                label={trainingT("Training.Copy.Title.4c08a5d5", "Title")}
+                placeholder={trainingT(
+                  "Training.Copy.egMateintwo.27762a2b",
+                  "e.g. Mate in two: deflection",
+                )}
                 value={importTitle}
                 onChange={(event) => setImportTitle(event.currentTarget.value)}
               />
               <TextInput
-                label="Etiquetas"
-                placeholder="táctica, clavada, torneo"
+                label={trainingT("Training.Copy.Tags.137cb944", "Tags")}
+                placeholder={trainingT(
+                  "Training.Copy.tacticspintournament.d4172f79",
+                  "tactics, pin, tournament",
+                )}
                 value={importTags}
                 onChange={(event) => setImportTags(event.currentTarget.value)}
               />
               <Textarea
-                label="FEN o PGN"
-                placeholder={"8/8/8/8/8/2k5/8/2K5 w - - 0 1\n\nó\n\n1. e4 e5 2. Nf3 Nc6"}
+                label={trainingT("Training.FenOrPgn", "FEN or PGN")}
+                placeholder={"8/8/8/8/8/2k5/8/2K5 w - - 0 1\n\n1. e4 e5 2. Nf3 Nc6"}
                 minRows={5}
                 autosize
                 value={importInput}
                 onChange={(event) => setImportInput(event.currentTarget.value)}
               />
               <Textarea
-                label="Notas"
-                placeholder="Qué quieres recordar o medir..."
+                label={trainingT("Training.Copy.Notes.8a6172e2", "Notes")}
+                placeholder={trainingT(
+                  "Training.Copy.Whatwouldyouliketo.ff8bc254",
+                  "What would you like to remember or measure...",
+                )}
                 minRows={2}
                 value={importNotes}
                 onChange={(event) => setImportNotes(event.currentTarget.value)}
               />
               <Button loading={importBusy} onClick={importPosition} disabled={!selectedCollection}>
-                Añadir a la colección
+                {" "}
+                {trainingT("Training.Copy.Addtocollection.dc037288", "Add to collection")}{" "}
               </Button>
             </Stack>
           </Card>
@@ -406,9 +522,13 @@ export default function TrainingPage() {
             <Stack>
               <Group justify="space-between">
                 <div>
-                  <Title order={4}>{selectedCollection?.name ?? "Colección"}</Title>
+                  <Title order={4}>
+                    {selectedCollection?.name ??
+                      trainingT("Training.Copy.Collection.1f5e6d24", "Collection")}
+                  </Title>
                   <Text size="sm" c="dimmed">
-                    {selectedCollection?.description || "Sin descripción"}
+                    {selectedCollection?.description ||
+                      trainingT("Training.Copy.Nodescription.9e3d482f", "No description")}
                   </Text>
                 </div>
                 {selectedCollection && <Badge variant="light">{selectedCollection.kind}</Badge>}
@@ -416,7 +536,11 @@ export default function TrainingPage() {
               <Divider />
               {items.length === 0 ? (
                 <Text c="dimmed" ta="center" py="xl">
-                  Esta colección todavía no tiene posiciones.
+                  {" "}
+                  {trainingT(
+                    "Training.Copy.Thiscollectionhasnopositions.a69b9e0f",
+                    "This collection has no positions yet.",
+                  )}{" "}
                 </Text>
               ) : (
                 <Stack gap="xs">
@@ -442,28 +566,29 @@ export default function TrainingPage() {
       <Modal
         opened={collectionModalOpened}
         onClose={() => setCollectionModalOpened(false)}
-        title="Nueva colección"
+        title={trainingT("Training.Copy.Newcollection.ea27a47a", "New collection")}
       >
         <Stack>
           <TextInput
-            label="Nombre"
+            label={trainingT("Training.Copy.Name.562bb157", "Name")}
             required
             value={collectionName}
             onChange={(event) => setCollectionName(event.currentTarget.value)}
           />
           <Textarea
-            label="Descripción"
+            label={trainingT("Training.Copy.Description.ee00b96f", "Description")}
             value={collectionDescription}
             onChange={(event) => setCollectionDescription(event.currentTarget.value)}
           />
           <Select
-            label="Contenido principal"
+            label={trainingT("Training.Copy.Maincontent.a6d99d71", "Main content")}
             data={collectionKindOptions}
             value={collectionKind}
             onChange={(value) => value && setCollectionKind(value as TrainingCollectionKind)}
           />
           <Button onClick={createCollection} disabled={!collectionName.trim()}>
-            Crear colección
+            {" "}
+            {trainingT("Training.Copy.Createcollection.34d70430", "Create collection")}{" "}
           </Button>
         </Stack>
       </Modal>
@@ -497,6 +622,8 @@ function TrainingItemRow({
   onDelete: () => void;
   onRecord: (outcome: TrainingAttemptOutcome) => void;
 }) {
+  const { t: trainingT } = useTrainingTranslation();
+
   return (
     <Paper withBorder p="sm">
       <Group justify="space-between" align="flex-start" wrap="nowrap">
@@ -504,10 +631,10 @@ function TrainingItemRow({
           <Group gap="xs" wrap="wrap">
             <Text fw={600}>{item.title}</Text>
             <Badge size="sm" variant="light">
-              {kindLabel(item.kind)}
+              {kindLabel(item.kind, trainingT)}
             </Badge>
             <Badge size="sm" variant="outline">
-              {attempts} intentos
+              {attempts} {trainingT("Training.Copy.attempts.59675592", "attempts")}{" "}
             </Badge>
           </Group>
           <Text size="xs" c="dimmed" ff="monospace" truncate>
@@ -521,45 +648,59 @@ function TrainingItemRow({
             ))}
             {item.solutionMoves.length > 0 && (
               <Text size="xs" c="dimmed">
-                Línea guardada: {item.solutionMoves.length} jugadas
+                {" "}
+                {trainingT("Training.Copy.Savedline.7551a593", "Saved line:")}{" "}
+                {item.solutionMoves.length}{" "}
+                {trainingT("Training.Copy.moves.a1a4a814", "moves")}{" "}
               </Text>
             )}
           </Group>
           <Text size="xs" c="dimmed">
-            Añadido {formatDate(item.createdAt)}
+            {" "}
+            {trainingT("Training.Copy.Added.f52c88f4", "Added")} {formatDate(item.createdAt)}
           </Text>
         </Stack>
         <Group gap={4} wrap="nowrap">
-          <Tooltip label="Abrir en el tablero">
-            <ActionIcon onClick={onOpen} aria-label="Abrir en el tablero">
+          <Tooltip label={trainingT("Training.Copy.Openonboard.e88da3ab", "Open on board")}>
+            <ActionIcon
+              onClick={onOpen}
+              aria-label={trainingT("Training.Copy.Openonboard.e88da3ab", "Open on board")}
+            >
               <IconExternalLink size={17} />
             </ActionIcon>
           </Tooltip>
-          <Tooltip label="Correcto">
+          <Tooltip label={trainingT("Training.Copy.Correct.e98f5156", "Correct")}>
             <ActionIcon
               color="teal"
               onClick={() => onRecord("correct")}
-              aria-label="Registrar correcto"
+              aria-label={trainingT("Training.Copy.Markcorrect.cb2884f9", "Mark correct")}
             >
               <IconCheck size={17} />
             </ActionIcon>
           </Tooltip>
-          <Tooltip label="Incorrecto">
+          <Tooltip label={trainingT("Training.Copy.Incorrect.bac5ee43", "Incorrect")}>
             <ActionIcon
               color="red"
               onClick={() => onRecord("incorrect")}
-              aria-label="Registrar incorrecto"
+              aria-label={trainingT("Training.Copy.Markincorrect.968c6921", "Mark incorrect")}
             >
               <IconX size={17} />
             </ActionIcon>
           </Tooltip>
-          <Tooltip label="Omitir">
-            <ActionIcon onClick={() => onRecord("skipped")} aria-label="Registrar omitido">
+          <Tooltip label={trainingT("Training.Copy.Skip.33ff2158", "Skip")}>
+            <ActionIcon
+              onClick={() => onRecord("skipped")}
+              aria-label={trainingT("Training.Copy.Markskipped.25ebd017", "Mark skipped")}
+            >
               <IconPlayerSkipForward size={17} />
             </ActionIcon>
           </Tooltip>
-          <Tooltip label="Eliminar">
-            <ActionIcon color="red" onClick={onDelete} aria-label="Eliminar posición">
+          <Tooltip label={trainingT("Training.Copy.Delete.c9894cf0", "Delete")}>
+            <ActionIcon
+              color="red"
+              onClick={onDelete}
+              aria-label={trainingT("Training.Copy.Deleteposition.c3cad629", "Delete position")}
+            >
               <IconTrash size={17} />
             </ActionIcon>
           </Tooltip>

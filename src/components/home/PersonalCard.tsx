@@ -21,17 +21,21 @@ import FideInfo from "../databases/FideInfo";
 import OpeningsPanel from "./PersonalCardPanels/OpeningsPanel";
 import OverviewPanel from "./PersonalCardPanels/OverviewPanel";
 import RatingsPanel from "./PersonalCardPanels/RatingsPanel";
+import PlayerAnalysisPanel from "./PersonalCardPanels/PlayerAnalysisPanel";
+import type { PlayerAnalysisSource } from "@/utils/playerAnalysis";
 
 function PersonalPlayerCard({
   name,
   setName,
   info,
   isDatabase,
+  analysisSources = [],
 }: {
   name: string;
   setName?: (name: string) => void;
   info: PlayerGameInfo;
   isDatabase?: boolean;
+  analysisSources?: PlayerAnalysisSource[];
 }) {
   const { t } = useTranslation();
   const store = useContext(DatabaseViewStateContext)!;
@@ -101,6 +105,7 @@ function PersonalPlayerCard({
           <Tabs.Tab value="overview">{t("Home.Personal.Overview")}</Tabs.Tab>
           <Tabs.Tab value="ratings">{t("Home.Personal.Ratings")}</Tabs.Tab>
           <Tabs.Tab value="openings">{t("Home.Personal.Openings")}</Tabs.Tab>
+          <Tabs.Tab value="analysis">{t("PlayerAnalysis.Tab", "Analysis")}</Tabs.Tab>
         </Tabs.List>
         <Tabs.Panel value="overview">
           <OverviewPanel playerName={name} info={info} isDatabase={isDatabase} />
@@ -110,6 +115,9 @@ function PersonalPlayerCard({
         </Tabs.Panel>
         <Tabs.Panel value="ratings">
           <RatingsPanel playerName={name} info={info} isDatabase={isDatabase} />
+        </Tabs.Panel>
+        <Tabs.Panel value="analysis" style={{ overflow: "hidden" }}>
+          <PlayerAnalysisPanel playerName={name} sources={analysisSources} />
         </Tabs.Panel>
       </Tabs>
     </Paper>

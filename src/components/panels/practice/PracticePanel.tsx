@@ -711,9 +711,28 @@ function PracticePanel({ saveFile }: { saveFile?: () => void }) {
                     <Alert color="blue" variant="light">
                       {selectedOpeningLine
                         ? openingQueue && openingQueue.gameNumbers.length > 1
-                          ? `Sesión de repertorio · línea ${openingQueue.currentIndex + 1} de ${openingQueue.gameNumbers.length} · ${selectedOpeningLine.name}.`
-                          : `Práctica individual · ${selectedOpeningLine.name}. Puedes repetir esta línea todas las veces que quieras.`
-                        : `Sesión de repertorio · capítulo ${openingQueue.currentIndex + 1} de ${openingQueue.gameNumbers.length}. Al terminar todas las líneas se abrirá el siguiente capítulo entrenable.`}
+                          ? t(
+                              "Training.Copy.Repertoiresessionlinev0of.c3a4ec82",
+                              "Repertoire session · line {{v0}} of {{v1}} · {{v2}}.",
+                              {
+                                v0: openingQueue.currentIndex + 1,
+                                v1: openingQueue.gameNumbers.length,
+                                v2: selectedOpeningLine.name,
+                              },
+                            )
+                          : t(
+                              "Training.Copy.Individualpracticev0Repeatthis.a8750c13",
+                              "Individual practice · {{v0}}. Repeat this line as often as you like.",
+                              { v0: selectedOpeningLine.name },
+                            )
+                        : t(
+                            "Training.Copy.Repertoiresessionchapterv0of.22d7688c",
+                            "Repertoire session · chapter {{v0}} of {{v1}}. Finishing all lines opens the next trainable chapter.",
+                            {
+                              v0: openingQueue.currentIndex + 1,
+                              v1: openingQueue.gameNumbers.length,
+                            },
+                          )}
                     </Alert>
                   )}
                   {practiceUnit === "line" && (
@@ -723,13 +742,18 @@ function PracticePanel({ saveFile }: { saveFile?: () => void }) {
                       leftSection={<IconArrowLeft size={14} />}
                       onClick={() => void navigate({ to: "/training/openings" })}
                     >
-                      Volver a aperturas
+                      {" "}
+                      {t("Training.Copy.Backtoopenings.3aa15245", "Back to openings")}{" "}
                     </Button>
                   )}
                   <Stack gap={4}>
                     <Group justify="space-between">
                       <Text fz="xs" fw={500}>
-                        Progreso programado del capítulo
+                        {" "}
+                        {t(
+                          "Training.Copy.Chapterschedulingprogress.18c1fd16",
+                          "Chapter scheduling progress",
+                        )}{" "}
                       </Text>
                       <Text fz="xs" c="dimmed">
                         {Math.round((stats.practiced / stats.total) * 100)}%
@@ -750,8 +774,11 @@ function PracticePanel({ saveFile }: { saveFile?: () => void }) {
                       </Tooltip>
                     </Progress.Root>
                     <Text fz={10} c="dimmed">
-                      Practicado: programado para después · Por practicar: vence ahora · No visto:
-                      todavía sin intento.
+                      {" "}
+                      {t(
+                        "Training.Copy.PracticedscheduledforlaterDue.36e80822",
+                        "Practiced: scheduled for later · Due: ready now · Unseen: not attempted yet.",
+                      )}{" "}
                     </Text>
                   </Stack>
 
@@ -787,11 +814,15 @@ function PracticePanel({ saveFile }: { saveFile?: () => void }) {
                     sessionStats.incorrect > 0) && (
                     <Stack gap={4}>
                       <Text fz="xs" fw={500}>
-                        Resultados de esta sesión
+                        {" "}
+                        {t("Training.Copy.Sessionresults.0ab10548", "Session results")}{" "}
                       </Text>
                       <Text fz={10} c="dimmed">
-                        En práctica por líneas, correcta significa terminada sin errores;
-                        incorrecta, terminada con uno o más errores.
+                        {" "}
+                        {t(
+                          "Training.Copy.Inlinepracticecorrectmeans.7f7dc36c",
+                          "In line practice, correct means completed without mistakes; incorrect means completed with one or more mistakes.",
+                        )}{" "}
                       </Text>
                       <SimpleGrid cols={3} spacing="xs">
                         <Paper p="xs" withBorder radius="sm">
@@ -867,7 +898,8 @@ function PracticePanel({ saveFile }: { saveFile?: () => void }) {
                           onClick={startFullPractice}
                           leftSection={<IconBook size={20} />}
                         >
-                          Practicar esta línea
+                          {" "}
+                          {t("Training.Copy.Practicethisline.f35e404a", "Practice this line")}{" "}
                         </Button>
                       ) : stats.due === 0 && stats.unseen === 0 ? (
                         <Paper p="sm" withBorder>
@@ -925,9 +957,16 @@ function PracticePanel({ saveFile }: { saveFile?: () => void }) {
                   {practiceState.phase === "waiting" && (
                     <Stack gap="xs">
                       {practiceUnit === "line" && practiceState.feedback === "correct" && (
-                        <Alert color="teal" icon={<IconCheck size={16} />} title="Jugada correcta">
-                          {practiceState.playedMove} pertenece a la línea. Continúa con la siguiente
-                          jugada.
+                        <Alert
+                          color="teal"
+                          icon={<IconCheck size={16} />}
+                          title={t("Training.Copy.Correctmove.88cf006d", "Correct move")}
+                        >
+                          {practiceState.playedMove}{" "}
+                          {t(
+                            "Training.Copy.belongstothelineContinue.5e381b89",
+                            "belongs to the line. Continue with the next move.",
+                          )}{" "}
                         </Alert>
                       )}
                       <Paper p="sm" withBorder>
@@ -963,7 +1002,8 @@ function PracticePanel({ saveFile }: { saveFile?: () => void }) {
                                   leftSection={<IconEye size={14} />}
                                   onClick={showExpectedOpeningMove}
                                 >
-                                  Mostrar jugada
+                                  {" "}
+                                  {t("Training.Copy.Showmove.940e6364", "Show move")}{" "}
                                 </Button>
                               )}
                               <Button
@@ -999,17 +1039,33 @@ function PracticePanel({ saveFile }: { saveFile?: () => void }) {
                     <Alert
                       color="blue"
                       icon={<Loader size="sm" />}
-                      title="Comprobando la desviación"
+                      title={t(
+                        "Training.Copy.Checkingthedeviation.ed8124df",
+                        "Checking the deviation",
+                      )}
                     >
-                      Estamos evaluando {practiceState.playedMove}. La comprobación tiene un límite
-                      breve y el tablero se reactivará automáticamente.
+                      {" "}
+                      {t("Training.Copy.Weareevaluating.55aea3a1", "We are evaluating")}{" "}
+                      {practiceState.playedMove}
+                      {t(
+                        "Training.Copy.Thischeckhasashort.7f4b34cf",
+                        ". This check has a short time limit and the board will automatically become active again.",
+                      )}{" "}
                     </Alert>
                   )}
 
                   {practiceState.phase === "revealing" && practiceUnit === "line" && (
-                    <Alert color="blue" icon={<IconEye size={16} />} title="Jugada mostrada">
-                      Observa {practiceState.answer}. Volveremos a la posición para que la juegues
-                      tú; esta ayuda cuenta como un error de la línea.
+                    <Alert
+                      color="blue"
+                      icon={<IconEye size={16} />}
+                      title={t("Training.Copy.Moverevealed.bca7b705", "Move revealed")}
+                    >
+                      {" "}
+                      {t("Training.Copy.Observe.69a284b3", "Observe")} {practiceState.answer}
+                      {t(
+                        "Training.Copy.Wewillreturntothe.754012fd",
+                        ". We will return to the position for you to play it; this help counts as one mistake in the line.",
+                      )}{" "}
                     </Alert>
                   )}
 
@@ -1018,10 +1074,22 @@ function PracticePanel({ saveFile }: { saveFile?: () => void }) {
                       <Stack gap="xs">
                         {practiceUnit === "line" && (
                           <Alert color={(practiceState.mistakes ?? 0) > 0 ? "yellow" : "teal"}>
-                            Línea terminada con {practiceState.mistakes ?? 0} errores.{" "}
+                            {" "}
+                            {t(
+                              "Training.Copy.Linecompletedwith.26e3ff6a",
+                              "Line completed with",
+                            )}{" "}
+                            {practiceState.mistakes ?? 0}{" "}
+                            {t("Training.Copy.mistakes.147085ef", "mistakes.")}{" "}
                             {trainingAreas.openings.settings.askLineDifficulty
-                              ? "Califícala una sola vez para programar la línea completa."
-                              : "La dificultad se calculará automáticamente a partir de errores y tiempo."}
+                              ? t(
+                                  "Training.Copy.Rateitoncetoschedule.5fd50ac4",
+                                  "Rate it once to schedule the entire line.",
+                                )
+                              : t(
+                                  "Training.Copy.Difficultywillbecalculatedautomatically.8f496a28",
+                                  "Difficulty will be calculated automatically from mistakes and time.",
+                                )}
                           </Alert>
                         )}
                         {(practiceUnit !== "line" ||
@@ -1043,11 +1111,21 @@ function PracticePanel({ saveFile }: { saveFile?: () => void }) {
                     )}
 
                   {practiceState.phase === "deviation" && (
-                    <Alert color="blue" title="Buena jugada fuera del repertorio">
+                    <Alert
+                      color="blue"
+                      title={t(
+                        "Training.Copy.Goodmoveoutsidetherepertoire.9858d08a",
+                        "Good move outside the repertoire",
+                      )}
+                    >
                       <Stack gap="xs">
                         <Text fz="sm">
-                          {practiceState.playedMove} mantiene una evaluación equivalente, pero la
-                          línea preparada continúa con {practiceState.answer}.
+                          {practiceState.playedMove}{" "}
+                          {t(
+                            "Training.Copy.keepsanequivalentevaluationbut.dc9f5aca",
+                            "keeps an equivalent evaluation, but the prepared line continues with",
+                          )}{" "}
+                          {practiceState.answer}.
                         </Text>
                         <Button
                           size="xs"
@@ -1061,7 +1139,11 @@ function PracticePanel({ saveFile }: { saveFile?: () => void }) {
                             }));
                           }}
                         >
-                          Continuar con la línea preparada
+                          {" "}
+                          {t(
+                            "Training.Copy.Continuewiththepreparedline.d39ce71e",
+                            "Continue with the prepared line",
+                          )}{" "}
                         </Button>
                       </Stack>
                     </Alert>
@@ -1080,15 +1162,30 @@ function PracticePanel({ saveFile }: { saveFile?: () => void }) {
                         }
                         title={
                           practiceState.feedback === "engine-unavailable"
-                            ? "No se pudo evaluar la desviación"
-                            : "Jugada incorrecta"
+                            ? t(
+                                "Training.Copy.Couldnotevaluatethedeviation.33721b53",
+                                "Could not evaluate the deviation",
+                              )
+                            : t("Training.Copy.Incorrectmove.54828596", "Incorrect move")
                         }
                       >
                         {practiceState.feedback === "engine-unavailable"
-                          ? `No pudimos comprobar si ${practiceState.playedMove} es una buena alternativa. La práctica sigue activa; intenta una jugada del repertorio.`
+                          ? t(
+                              "Training.Copy.Couldnotcheckwhetherv0.9faa3ff4",
+                              "Could not check whether {{v0}} is a good alternative. Practice is still active; try a repertoire move.",
+                              { v0: practiceState.playedMove },
+                            )
                           : practiceState.feedback === "strict"
-                            ? `${practiceState.playedMove} no pertenece a esta línea. La evaluación de alternativas está desactivada; intenta una jugada del repertorio.`
-                            : `${practiceState.playedMove} no pertenece a esta línea ni mantiene una evaluación equivalente. Inténtalo de nuevo.`}
+                            ? t(
+                                "Training.Copy.v0isoutsidethisline.94a44046",
+                                "{{v0}} is outside this line. Alternative evaluation is disabled; try a repertoire move.",
+                                { v0: practiceState.playedMove },
+                              )
+                            : t(
+                                "Training.Copy.v0isoutsidethisline.6936860e",
+                                "{{v0}} is outside this line and does not maintain an equivalent evaluation. Try again.",
+                                { v0: practiceState.playedMove },
+                              )}
                       </Alert>
                     ) : (
                       <Paper p="sm" withBorder>

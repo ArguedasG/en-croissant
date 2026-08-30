@@ -54,9 +54,9 @@ const zodArray = <Input, Output>(itemSchema: z.ZodType<Output, z.ZodTypeDef, Inp
 // Tabs
 
 const firstTab: Tab = {
-    name: "Tab.NewTab",
+    name: "Home.Card.AnalysisBoard.Title",
     value: genID(),
-    type: "new",
+    type: "analysis",
     gameOrigin: {
         kind: "none",
     },
@@ -219,6 +219,9 @@ export const boardImageAtom = atomWithStorage<string>("board-image", "gray.svg")
 export const primaryColorAtom = atomWithStorage<MantineColor>("mantine-primary-color", "blue");
 export const sessionsAtom = atomWithStorage<Session[]>("sessions", []);
 export const nativeBarAtom = atomWithStorage<boolean>("native-bar", false);
+export const reuseEmptyAnalysisTabAtom = atomWithStorage<boolean>("reuse-empty-analysis-tab", true);
+export const sidebarExpandedAtom = atomWithStorage<boolean>("sidebar-expanded", false);
+export const importModalOpenAtom = atom(false);
 export const telemetryEnabledAtom = atomWithStorage<boolean>("telemetry-enabled", true, undefined, {
     getOnInit: true,
 });
@@ -447,7 +450,7 @@ export const currentTabSelectedAtom = tabValue(tabFamily);
 const reportModalOpenFamily = atomFamily((_tab: string) => atom(false));
 export const currentReportModalOpenAtom = tabValue(reportModalOpenFamily);
 
-const localOptionsFamily = atomFamily((_tab: string) =>
+export const localOptionsFamily = atomFamily((_tab: string) =>
     atom<LocalOptions>({
         path: null,
         type: "exact",
@@ -486,7 +489,7 @@ const dbTypeFamily = atomFamily((_tab: string) =>
 );
 export const currentDbTypeAtom = tabValue(dbTypeFamily);
 
-const dbTabFamily = atomFamily((_tab: string) => atom("stats"));
+export const dbTabFamily = atomFamily((_tab: string) => atom("stats"));
 export const currentDbTabAtom = tabValue(dbTabFamily);
 
 const analysisTabFamily = atomFamily((_tab: string) => atom("engines"));

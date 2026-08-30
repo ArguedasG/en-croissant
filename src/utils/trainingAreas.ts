@@ -3,7 +3,7 @@ import { getMainLine, parsePGN } from "@/utils/chess";
 import { positionFromFen } from "@/utils/chessops";
 import { getGameName } from "@/utils/treeReducer";
 
-export const TRAINING_AREAS_SCHEMA_VERSION = 8;
+export const TRAINING_AREAS_SCHEMA_VERSION = 9;
 const TACTICS_ACCEPTANCE_THRESHOLD_CP = 30;
 
 const timestamp = () => new Date().toISOString();
@@ -14,6 +14,15 @@ export type TrainingObjective = z.infer<typeof trainingObjectiveSchema>;
 const sourceSchema = z.object({
     label: z.string().optional(),
     pgn: z.string().optional(),
+    playerAnalysis: z
+        .object({
+            databasePath: z.string(),
+            gameId: z.number().int(),
+            ply: z.number().int().nonnegative(),
+            cpLoss: z.number().nonnegative(),
+            classification: z.enum(["inaccuracy", "mistake", "blunder"]),
+        })
+        .optional(),
 });
 
 const tacticsExerciseSchema = z.object({
@@ -169,6 +178,18 @@ const openingVariantSchema = z.object({
 export type OpeningVariant = z.infer<typeof openingVariantSchema>;
 
 const openingRepertoireSchema = z.object({
+    imports: z
+        .array(
+            z.object({
+                at: z.string(),
+                source: z.string(),
+                recordIndexes: z.array(z.number().int().nonnegative()),
+                mode: z.enum(["theory", "modelGame"]),
+                addedLines: z.number(),
+                addedGames: z.number(),
+            }),
+        )
+        .optional(),
     id: z.string(),
     name: z.string(),
     color: z.enum(["white", "black", "both"]),
@@ -511,7 +532,7 @@ export const persistedTrainingAreasSchema = z.preprocess((value) => {
         const openings = migrated.openings as Record<string, unknown> | undefined;
         migrated = {
             ...migrated,
-            schemaVersion: TRAINING_AREAS_SCHEMA_VERSION,
+            schemaVersion: 8,
             openings: {
                 ...openings,
                 settings: {
@@ -522,6 +543,10 @@ export const persistedTrainingAreasSchema = z.preprocess((value) => {
         };
     }
 
+    if (migrated.schemaVersion === 8) {
+        migrated = { ...migrated, schemaVersion: TRAINING_AREAS_SCHEMA_VERSION };
+    }
+
     return migrated;
 }, trainingAreasSchema);
 
@@ -530,6 +555,7 @@ export type ParsedTrainingRecord = {
     moves: string[];
     title: string;
     sourcePgn?: string;
+    playerAnalysis?: TacticsExercise["source"]["playerAnalysis"];
     hasExplicitFen: boolean;
 };
 
@@ -657,7 +683,11 @@ export function addTacticsSet(
             fen: record.fen,
             solutionMoves: record.moves,
             tags: [],
-            source: { label: record.title, pgn: record.sourcePgn },
+            source: {
+                label: record.title,
+                pgn: record.sourcePgn,
+                playerAnalysis: record.playerAnalysis,
+            },
             createdAt,
         };
         return id;
@@ -690,6 +720,59 @@ export function addTacticsSet(
                     validationMode: "auto",
                 },
                 createdAt,
+                updatedAt: createdAt,
+            },
+        },
+    };
+}
+
+export function addTacticsExerciseToSet(
+    state: TacticsState,
+    setId: string,
+    record: ParsedTrainingRecord,
+    tags: string[] = [],
+): TacticsState {
+    const set = state.sets[setId];
+    if (!set || set.origin !== "user" || set.source?.kind === "pgnFile") return state;
+    const duplicate = set.exerciseIds.some((exerciseId) => {
+        const exercise = state.exercises[exerciseId];
+        const existing = exercise?.source.playerAnalysis;
+        const incoming = record.playerAnalysis;
+        return (
+            existing &&
+            incoming &&
+            existing.databasePath === incoming.databasePath &&
+            existing.gameId === incoming.gameId &&
+            existing.ply === incoming.ply
+        );
+    });
+    if (duplicate) return state;
+
+    const id = areaId("tactic");
+    const createdAt = timestamp();
+    return {
+        ...state,
+        exercises: {
+            ...state.exercises,
+            [id]: {
+                id,
+                title: record.title,
+                fen: record.fen,
+                solutionMoves: record.moves,
+                tags,
+                source: {
+                    label: record.title,
+                    pgn: record.sourcePgn,
+                    playerAnalysis: record.playerAnalysis,
+                },
+                createdAt,
+            },
+        },
+        sets: {
+            ...state.sets,
+            [setId]: {
+                ...set,
+                exerciseIds: [...set.exerciseIds, id],
                 updatedAt: createdAt,
             },
         },
@@ -1537,9 +1620,9 @@ export function getOpeningRepertoireMetrics(
 ): OpeningProgressMetrics {
     const repertoire = state.repertoires[repertoireId];
     return aggregateOpeningMetrics(
-        (repertoire?.variantIds ?? []).map((variantId) =>
-            getOpeningVariantMetrics(state, variantId),
-        ),
+        (repertoire?.variantIds ?? [])
+            .filter((variantId) => state.variants[variantId]?.contentType === "theory")
+            .map((variantId) => getOpeningVariantMetrics(state, variantId)),
     );
 }
 

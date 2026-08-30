@@ -6,6 +6,16 @@ const pendingWrites = new Map<string, StorageValue<unknown>>();
 let flushTimeout: ReturnType<typeof setTimeout> | null = null;
 let flushHandlersBound = false;
 
+export function getLatestSessionStorageValue<S>(name: string): StorageValue<S> | null {
+    const pending = pendingWrites.get(name);
+    if (pending) {
+        return pending as StorageValue<S>;
+    }
+
+    const stored = sessionStorage.getItem(name);
+    return stored ? (JSON.parse(stored) as StorageValue<S>) : null;
+}
+
 function flush() {
     if (pendingWrites.size === 0) {
         return;
@@ -54,13 +64,7 @@ export function createDebouncedSessionStorage<S>(delay = DEBOUNCE_MS): PersistSt
 
     return {
         getItem: (name) => {
-            const pending = pendingWrites.get(name);
-            if (pending) {
-                return pending as StorageValue<S>;
-            }
-
-            const stored = sessionStorage.getItem(name);
-            return stored ? (JSON.parse(stored) as StorageValue<S>) : null;
+            return getLatestSessionStorageValue<S>(name);
         },
         setItem: (name, value) => {
             pendingWrites.set(name, value as StorageValue<unknown>);

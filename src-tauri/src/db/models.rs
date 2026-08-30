@@ -172,6 +172,8 @@ pub struct NormalizedGame {
     #[specta(optional)]
     pub eco: Option<String>,
     #[specta(optional)]
+    pub opening: Option<String>,
+    #[specta(optional)]
     pub ply_count: Option<i32>,
     pub moves: String,
 }

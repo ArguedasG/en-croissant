@@ -1161,7 +1161,11 @@ fn normalize_game_engine_options(player: &mut PlayerConfig, chess960: bool) {
 
 fn normalize_lc0_go_mode(player: &mut PlayerConfig) {
     let PlayerConfig::Engine {
-        name, path, args, go, ..
+        name,
+        path,
+        args,
+        go,
+        ..
     } = player
     else {
         return;

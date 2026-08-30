@@ -34,6 +34,21 @@ export type Speed =
     | "Correspondence"
     | "Unknown";
 
+/**
+ * Position requests are cancelled when their owning tab unmounts or a newer
+ * request supersedes them. Those lifecycle cancellations must not be surfaced
+ * as database failures when the tab is restored from the SWR cache.
+ */
+export function isTransientPositionError(error: unknown): boolean {
+    if (error instanceof DOMException && error.name === "AbortError") return true;
+    const message = error instanceof Error ? error.message : String(error ?? "");
+    return (
+        message === "Search cancelled" ||
+        message === "Search preempted" ||
+        message === "This operation was aborted"
+    );
+}
+
 function normalizeRange(range?: [number, number] | null): [number, number] | undefined {
     if (!range || range[1] - range[0] === 3000) {
         return undefined;
@@ -152,6 +167,7 @@ export interface Opening {
     white: number;
     black: number;
     draw: number;
+    unknown?: number;
 }
 
 export async function getTournamentGames(file: string, id: number) {
@@ -165,27 +181,77 @@ export async function getTournamentGames(file: string, id: number) {
     });
 }
 
-export async function searchPosition(options: LocalOptions, tab: string) {
-    const res = await commands.searchPosition(
-        options.path!,
-        {
-            player1: options.color === "white" ? options.player : undefined,
-            player2: options.color === "black" ? options.player : undefined,
-            position: {
-                fen: options.fen,
-                type_: options.type,
-            },
-            start_date: options.start_date,
-            end_date: options.end_date,
-            wanted_result: options.result,
-        },
-        tab,
-    );
-    if (res.status === "error") {
-        if (res.error !== "Search stopped") {
-            unwrap(res);
+export async function queryPosition(
+    options: LocalOptions,
+    tab: string,
+    signal?: AbortSignal,
+    background = false,
+) {
+    signal?.throwIfAborted();
+    const cancel = () => {
+        void commands.cancelPositionSearch(tab);
+    };
+    signal?.addEventListener("abort", cancel, { once: true });
+    try {
+        while (true) {
+            signal?.throwIfAborted();
+            const eloRange: [number, number] | undefined =
+                options.elo_min != null || options.elo_max != null
+                    ? [
+                          Math.min(options.elo_min ?? 1, options.elo_max ?? 32767),
+                          Math.max(options.elo_min ?? 1, options.elo_max ?? 32767),
+                      ]
+                    : undefined;
+            const res = await commands.queryPosition(
+                options.path!,
+                {
+                    player1: options.color === "white" ? options.player : undefined,
+                    player2: options.color === "black" ? options.player : undefined,
+                    any_player: options.color === "any" ? options.player : undefined,
+                    range1: eloRange,
+                    range2: eloRange,
+                    position: {
+                        fen: options.fen,
+                        type_: options.type,
+                    },
+                    start_date: options.start_date,
+                    end_date: options.end_date,
+                    wanted_result: options.result,
+                },
+                tab,
+                background,
+            );
+            signal?.throwIfAborted();
+            if (res.status === "ok") return res.data;
+            if (res.error === "Search preempted" && background && signal) {
+                await new Promise<void>((resolve, reject) => {
+                    const abort = () => {
+                        clearTimeout(timer);
+                        reject(signal.reason);
+                    };
+                    const timer = setTimeout(() => {
+                        signal.removeEventListener("abort", abort);
+                        resolve();
+                    }, 150);
+                    signal.addEventListener("abort", abort, { once: true });
+                    if (signal.aborted) abort();
+                });
+                continue;
+            }
+            throw new Error(res.error);
         }
-        return Promise.reject();
+    } finally {
+        signal?.removeEventListener("abort", cancel);
     }
-    return res.data;
+}
+
+/** Compatibility for repertoire callers: no PGN hydration for an aggregate-only query. */
+export async function searchPosition(
+    options: LocalOptions,
+    tab: string,
+    signal?: AbortSignal,
+    background = false,
+): Promise<[Opening[], NormalizedGame[]]> {
+    const summary = await queryPosition(options, tab, signal, background);
+    return [summary.openings, []];
 }

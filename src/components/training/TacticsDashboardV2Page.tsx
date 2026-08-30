@@ -1,3 +1,5 @@
+import { useTranslation as useTrainingTranslation } from "react-i18next";
+import i18n from "i18next";
 import {
   ActionIcon,
   Alert,
@@ -71,12 +73,12 @@ const defaultConfig: TacticsSet["config"] = {
   validationMode: "auto",
 };
 
-function filename(path: string) {
+function filename(path: string, trainingT: typeof i18n.t = i18n.t) {
   return (
     path
       .split(/[\\/]/)
       .pop()
-      ?.replace(/\.[^.]+$/, "") || "Set de táctica"
+      ?.replace(/\.[^.]+$/, "") || trainingT("Training.Copy.Tacticsset.e9b5f38c", "Tactics set")
   );
 }
 
@@ -86,15 +88,19 @@ function numericRating(value: string | number): number | null {
   return Number.isFinite(parsed) ? Math.max(0, Math.round(parsed)) : null;
 }
 
-function ratingLabel(set: TacticsSet) {
+function ratingLabel(set: TacticsSet, trainingT: typeof i18n.t = i18n.t) {
   const { min, max } = set.recommendedRating;
   if (min !== null && max !== null) return `${min}–${max} ELO`;
-  if (min !== null) return `Desde ${min} ELO`;
-  if (max !== null) return `Hasta ${max} ELO`;
-  return "Todos los niveles";
+  if (min !== null)
+    return trainingT("Training.Copy.Fromv0ELO.92be5507", "From {{v0}} ELO", { v0: min });
+  if (max !== null)
+    return trainingT("Training.Copy.Uptov0ELO.249acac4", "Up to {{v0}} ELO", { v0: max });
+  return trainingT("Training.Copy.Alllevels.268b96a8", "All levels");
 }
 
 export default function TacticsDashboardV2Page() {
+  const { t: trainingT } = useTrainingTranslation();
+
   const navigate = useNavigate();
   const [areas, setAreas] = useAtom(trainingAreasAtom);
   const [, setTabs] = useAtom(tabsAtom);
@@ -184,20 +190,33 @@ export default function TacticsDashboardV2Page() {
       .catch((error) => {
         if (!cancelled) {
           setReviewExercise(null);
-          setReviewError(error instanceof Error ? error.message : "No se pudo leer el problema.");
+          setReviewError(
+            error instanceof Error
+              ? error.message
+              : trainingT(
+                  "Training.Copy.Couldnotreadthepuzzle.3ad5e4a1",
+                  "Could not read the puzzle.",
+                ),
+          );
         }
       })
       .finally(() => !cancelled && setReviewLoading(false));
     return () => {
       cancelled = true;
     };
-  }, [areas.tactics.exercises, reviewIndex, reviewSet, reviewTotal, reviewView]);
+  }, [areas.tactics.exercises, reviewIndex, reviewSet, reviewTotal, reviewView, trainingT]);
 
   function ratingRange(minValue: string | number, maxValue: string | number) {
     const min = numericRating(minValue);
     const max = numericRating(maxValue);
     if (min !== null && max !== null && min > max) {
-      setFeedback({ text: "El ELO mínimo no puede ser mayor que el máximo.", color: "red" });
+      setFeedback({
+        text: trainingT(
+          "Training.Copy.MinimumELOcannotexceedmaximum.c30da85b",
+          "Minimum ELO cannot exceed maximum ELO.",
+        ),
+        color: "red",
+      });
       return null;
     }
     return { min, max };
@@ -206,7 +225,10 @@ export default function TacticsDashboardV2Page() {
   async function openLichessTrainer() {
     await navigate({ to: "/" });
     await createTab({
-      tab: { name: "Entrenamiento de Táctica", type: "puzzles" },
+      tab: {
+        name: trainingT("Training.Copy.Tacticstraining.8816b222", "Tactics training"),
+        type: "puzzles",
+      },
       setTabs,
       setActiveTab,
     });
@@ -215,19 +237,36 @@ export default function TacticsDashboardV2Page() {
   async function selectImportFile() {
     const selected = await open({
       multiple: false,
-      filters: [{ name: "PGN de táctica", extensions: ["pgn"] }],
+      filters: [
+        {
+          name: trainingT("Training.Copy.TacticsPGN.2840fe24", "Tactics PGN"),
+          extensions: ["pgn"],
+        },
+      ],
     });
     if (typeof selected !== "string") return;
     setImportBusy(true);
     setFeedback(null);
     try {
       const next = await inspectTacticsPgn(selected, draftConfig);
-      if (next.recordCount === 0) throw new Error("El archivo no contiene ejercicios PGN.");
+      if (next.recordCount === 0)
+        throw new Error(
+          trainingT(
+            "Training.Copy.ThefilecontainsnoPGN.40a99062",
+            "The file contains no PGN exercises.",
+          ),
+        );
       setInspection(next);
-      if (!setName.trim()) setSetName(filename(selected));
+      if (!setName.trim()) setSetName(filename(selected, trainingT));
     } catch (error) {
       setFeedback({
-        text: error instanceof Error ? error.message : "No se pudo inspeccionar el PGN.",
+        text:
+          error instanceof Error
+            ? error.message
+            : trainingT(
+                "Training.Copy.CouldnotinspectthePGN.dc19e21b",
+                "Could not inspect the PGN.",
+              ),
         color: "red",
       });
     } finally {
@@ -239,7 +278,7 @@ export default function TacticsDashboardV2Page() {
     if (!inspection) return;
     const recommendedRating = ratingRange(ratingMin, ratingMax);
     if (!recommendedRating) return;
-    const name = setName.trim() || filename(inspection.path);
+    const name = setName.trim() || filename(inspection.path, trainingT);
     setAreas((previous) => ({
       ...previous,
       tactics: addTacticsFileSet(previous.tactics, {
@@ -259,7 +298,11 @@ export default function TacticsDashboardV2Page() {
     setRatingMax("");
     setDraftConfig(defaultConfig);
     setFeedback({
-      text: `Set «${name}» añadido con ${inspection.recordCount.toLocaleString()} problemas.`,
+      text: trainingT(
+        "Training.Copy.Setv0addedwithv1.f3488bc5",
+        "Set “{{v0}}” added with {{v1}} puzzles.",
+        { v0: name, v1: inspection.recordCount.toLocaleString() },
+      ),
     });
   }
 
@@ -299,7 +342,13 @@ export default function TacticsDashboardV2Page() {
       tactics: deleteTacticsSet(previous.tactics, deletingSetId),
     }));
     setDeletingSetId(null);
-    setFeedback({ text: `Set «${set.name}» eliminado. Su archivo PGN no se ha borrado.` });
+    setFeedback({
+      text: trainingT(
+        "Training.Copy.Setv0removedItsPGN.42a87794",
+        "Set “{{v0}}” removed. Its PGN file was not deleted.",
+        { v0: set.name },
+      ),
+    });
   }
 
   function review(setId: string) {
@@ -332,12 +381,25 @@ export default function TacticsDashboardV2Page() {
     <Container size="xl" py="md">
       <Stack gap="lg">
         <Group align="flex-start">
-          <Button component={Link} to="/training" variant="subtle" p="xs" aria-label="Volver">
+          <Button
+            component={Link}
+            to="/training"
+            variant="subtle"
+            p="xs"
+            aria-label={trainingT("Training.Copy.Back.ab26ae7b", "Back")}
+          >
             <IconArrowLeft size={20} />
           </Button>
           <div>
-            <Title order={2}>Entrenamiento de Táctica</Title>
-            <Text c="dimmed">Elige un set, retoma tu progreso y entrena a tu ritmo.</Text>
+            <Title order={2}>
+              {trainingT("Training.Copy.Tacticstraining.8816b222", "Tactics training")}
+            </Title>
+            <Text c="dimmed">
+              {trainingT(
+                "Training.Copy.Chooseasetresumeyour.f0e70311",
+                "Choose a set, resume your progress, and train at your own pace.",
+              )}
+            </Text>
           </div>
         </Group>
 
@@ -348,9 +410,15 @@ export default function TacticsDashboardV2Page() {
         )}
 
         <div>
-          <Title order={3}>Sets disponibles</Title>
+          <Title order={3}>
+            {trainingT("Training.Copy.Availablesets.d6d3e738", "Available sets")}
+          </Title>
           <Text size="sm" c="dimmed">
-            Cada set conserva su progreso, nivel recomendado y ciclos anteriores.
+            {" "}
+            {trainingT(
+              "Training.Copy.Eachsetkeepsitsprogress.6ec42902",
+              "Each set keeps its progress, recommended level, and previous cycles.",
+            )}{" "}
           </Text>
         </div>
 
@@ -358,7 +426,9 @@ export default function TacticsDashboardV2Page() {
           <Card withBorder>
             <Stack align="center" py="xl">
               <IconPuzzle size={42} color="var(--mantine-color-dimmed)" />
-              <Text c="dimmed">Todavía no hay sets disponibles.</Text>
+              <Text c="dimmed">
+                {trainingT("Training.Copy.Nosetsavailableyet.3041bd51", "No sets available yet.")}
+              </Text>
             </Stack>
           </Card>
         ) : (
@@ -389,33 +459,52 @@ export default function TacticsDashboardV2Page() {
                         </Badge>
                       </Group>
                       <Text size="sm" c="dimmed" mt="xs" mih={42}>
-                        {set.description || "Colección de posiciones tácticas."}
+                        {set.description ||
+                          trainingT(
+                            "Training.Copy.Tacticalpositioncollection.cc3246c4",
+                            "Tactical position collection.",
+                          )}
                       </Text>
                       <Progress value={progress.percent} color="orange" mt="md" />
                       <Group justify="space-between" mt={4}>
                         <Text size="xs" c="dimmed">
-                          Progreso {progress.percent}%
+                          {" "}
+                          {trainingT("Training.Copy.Progress.1d4a9eeb", "Progress")}{" "}
+                          {progress.percent}%
                         </Text>
                         <Text size="xs" c="dimmed">
-                          Siguiente: {resume + 1}
+                          {" "}
+                          {trainingT("Training.Copy.Next.57d01069", "Next:")} {resume + 1}
                         </Text>
                       </Group>
                       <Group gap="xs" mt="sm">
                         <Badge size="sm" variant="outline">
-                          {set.config.mode === "woodpecker" ? "Woodpecker" : "Guiado"}
+                          {set.config.mode === "woodpecker"
+                            ? "Woodpecker"
+                            : trainingT("Training.Copy.Guided.57bd258f", "Guided")}
                         </Badge>
                         <Badge size="sm" color="blue" variant="light">
-                          {ratingLabel(set)}
+                          {ratingLabel(set, trainingT)}
                         </Badge>
                         {set.origin === "bundled" && (
                           <Badge size="sm" color="teal">
-                            Incluido
+                            {" "}
+                            {trainingT("Training.Copy.Included.384f88d5", "Included")}{" "}
                           </Badge>
                         )}
                       </Group>
                       <Text size="xs" c="dimmed" mt="sm">
-                        {progress.incorrect} fallos · {set.progress.cycles.length} ciclos
-                        {lastCycle ? ` · último: ${lastCycle.failures} fallos` : ""}
+                        {progress.incorrect}{" "}
+                        {trainingT("Training.Copy.mistakes.5c65c76e", "mistakes ·")}{" "}
+                        {set.progress.cycles.length}{" "}
+                        {trainingT("Training.Copy.cycles.5d205153", "cycles")}{" "}
+                        {lastCycle
+                          ? trainingT(
+                              "Training.Copy.lastv0mistakes.35e6e46a",
+                              " · last: {{v0}} mistakes",
+                              { v0: lastCycle.failures },
+                            )
+                          : ""}
                       </Text>
                     </div>
                     <Stack gap="xs" mt="md">
@@ -432,11 +521,19 @@ export default function TacticsDashboardV2Page() {
                       >
                         {set.config.mode === "woodpecker" && !set.progress.activeCycle
                           ? set.progress.cycles.length > 0
-                            ? `Comenzar ciclo ${set.progress.cycles.length + 1}`
-                            : "Empezar ciclo 1"
+                            ? trainingT(
+                                "Training.Copy.Startcyclev0.4952ee6f",
+                                "Start cycle {{v0}}",
+                                { v0: set.progress.cycles.length + 1 },
+                              )
+                            : trainingT("Training.Copy.Startcycle1.1f37b857", "Start cycle 1")
                           : progress.attempted > 0
-                            ? `Continuar en el problema ${resume + 1}`
-                            : "Empezar set"}
+                            ? trainingT(
+                                "Training.Copy.Continueatpuzzlev0.e476dc9b",
+                                "Continue at puzzle {{v0}}",
+                                { v0: resume + 1 },
+                              )
+                            : trainingT("Training.Copy.Startset.88c407a1", "Start set")}
                       </Button>
                       <Group grow>
                         <Button
@@ -444,21 +541,27 @@ export default function TacticsDashboardV2Page() {
                           leftSection={<IconEye size={16} />}
                           onClick={() => review(set.id)}
                         >
-                          Revisar
+                          {" "}
+                          {trainingT("Training.Copy.Review.52fadddb", "Review")}{" "}
                         </Button>
                         <Button
                           variant="default"
                           leftSection={<IconSettings size={16} />}
                           onClick={() => editSet(set)}
                         >
-                          Configurar
+                          {" "}
+                          {trainingT("Training.Copy.Configure.d685ddb9", "Configure")}{" "}
                         </Button>
                         {set.origin === "user" && (
                           <ActionIcon
                             size={36}
                             color="red"
                             variant="subtle"
-                            aria-label={`Eliminar ${set.name}`}
+                            aria-label={trainingT(
+                              "Training.Copy.Deletev0.8fd0a297",
+                              "Delete {{v0}}",
+                              { v0: set.name },
+                            )}
                             onClick={() => setDeletingSetId(set.id)}
                           >
                             <IconTrash size={16} />
@@ -479,9 +582,18 @@ export default function TacticsDashboardV2Page() {
               <Group>
                 <IconDatabase size={26} color="var(--mantine-color-orange-6)" />
                 <div>
-                  <Text fw={600}>Bases de puzzles instaladas</Text>
+                  <Text fw={600}>
+                    {trainingT(
+                      "Training.Copy.Installedpuzzledatabases.0a978ef7",
+                      "Installed puzzle databases",
+                    )}
+                  </Text>
                   <Text size="sm" c="dimmed">
-                    Entrena con tus bases locales y sus filtros.
+                    {" "}
+                    {trainingT(
+                      "Training.Copy.Trainwithyourlocaldatabases.45bd0460",
+                      "Train with your local databases and filters.",
+                    )}{" "}
                   </Text>
                 </div>
               </Group>
@@ -497,7 +609,11 @@ export default function TacticsDashboardV2Page() {
               leftSection={<IconPlayerPlay size={16} />}
               onClick={openLichessTrainer}
             >
-              Abrir entrenador de bases
+              {" "}
+              {trainingT(
+                "Training.Copy.Opendatabasetrainer.54b0961e",
+                "Open database trainer",
+              )}{" "}
             </Button>
           </Stack>
         </Card>
@@ -507,33 +623,42 @@ export default function TacticsDashboardV2Page() {
             <Group>
               <IconUpload size={26} color="var(--mantine-color-orange-6)" />
               <div>
-                <Text fw={600}>Importar otro set desde PGN</Text>
+                <Text fw={600}>
+                  {trainingT(
+                    "Training.Copy.ImportanotherPGNset.1d885849",
+                    "Import another PGN set",
+                  )}
+                </Text>
                 <Text size="sm" c="dimmed">
-                  Revisa una muestra antes de añadirlo; el archivo se lee bajo demanda.
+                  {" "}
+                  {trainingT(
+                    "Training.Copy.Reviewasamplebeforeadding.624433b2",
+                    "Review a sample before adding it; the file is read on demand.",
+                  )}{" "}
                 </Text>
               </div>
             </Group>
             <SimpleGrid cols={{ base: 1, md: 2, lg: 4 }}>
               <TextInput
-                label="Nombre"
+                label={trainingT("Training.Copy.Name.562bb157", "Name")}
                 value={setName}
                 onChange={(event) => setSetName(event.currentTarget.value)}
               />
               <TextInput
-                label="Descripción"
+                label={trainingT("Training.Copy.Description.ee00b96f", "Description")}
                 value={description}
                 onChange={(event) => setDescription(event.currentTarget.value)}
               />
               <NumberInput
-                label="ELO mínimo"
-                placeholder="Opcional"
+                label={trainingT("Training.Copy.MinimumELO.8f4b3e52", "Minimum ELO")}
+                placeholder={trainingT("Training.Copy.Optional.a6e63474", "Optional")}
                 min={0}
                 value={ratingMin}
                 onChange={setRatingMin}
               />
               <NumberInput
-                label="ELO máximo"
-                placeholder="Opcional"
+                label={trainingT("Training.Copy.MaximumELO.86ea8125", "Maximum ELO")}
+                placeholder={trainingT("Training.Copy.Optional.a6e63474", "Optional")}
                 min={0}
                 value={ratingMax}
                 onChange={setRatingMax}
@@ -545,7 +670,8 @@ export default function TacticsDashboardV2Page() {
               leftSection={<IconUpload size={16} />}
               onClick={selectImportFile}
             >
-              Seleccionar PGN
+              {" "}
+              {trainingT("Training.Copy.SelectPGN.c64242a6", "Select PGN")}{" "}
             </Button>
           </Stack>
         </Card>
@@ -554,14 +680,19 @@ export default function TacticsDashboardV2Page() {
       <Modal
         opened={inspection !== null}
         onClose={() => setInspection(null)}
-        title="Revisar importación"
+        title={trainingT("Training.Copy.Reviewimport.fdac9a14", "Review import")}
         size="lg"
       >
         {inspection && (
           <Stack>
             <Alert color={sampleErrors > 0 ? "yellow" : "blue"}>
-              {inspection.recordCount.toLocaleString()} problemas. En la muestra: {sampleSolutions}{" "}
-              con solución, {sampleVariations} con variantes y {sampleErrors} inválidos.
+              {inspection.recordCount.toLocaleString()}{" "}
+              {trainingT("Training.Copy.puzzlesInthesample.8d658c6e", "puzzles. In the sample:")}{" "}
+              {sampleSolutions}{" "}
+              {trainingT("Training.Copy.withsolutions.9969c715", "with solutions,")}{" "}
+              {sampleVariations}{" "}
+              {trainingT("Training.Copy.withvariationsand.e3e62542", "with variations and")}{" "}
+              {sampleErrors} {trainingT("Training.Copy.invalid.1ca85cf6", "invalid.")}{" "}
             </Alert>
             <ScrollArea h={210}>
               <Stack gap="xs" pr="sm">
@@ -573,8 +704,13 @@ export default function TacticsDashboardV2Page() {
                     <Text size="xs" c={sample.error ? "red" : "dimmed"}>
                       {sample.error ||
                         (sample.hasSolution
-                          ? `${sample.moveCount} medias jugadas`
-                          : "Sin solución preparada")}
+                          ? trainingT("Training.Copy.v0plies.b7fec1eb", "{{v0}} plies", {
+                              v0: sample.moveCount,
+                            })
+                          : trainingT(
+                              "Training.Copy.Nopreparedsolution.2ac57fbb",
+                              "No prepared solution",
+                            ))}
                     </Text>
                   </Card>
                 ))}
@@ -583,10 +719,12 @@ export default function TacticsDashboardV2Page() {
             <TacticsConfigFields config={draftConfig} onChange={setDraftConfig} />
             <Group justify="flex-end">
               <Button variant="default" onClick={() => setInspection(null)}>
-                Cancelar
+                {" "}
+                {trainingT("Training.Copy.Cancel.bb9dbb40", "Cancel")}{" "}
               </Button>
               <Button color="orange" onClick={confirmImport}>
-                Importar set
+                {" "}
+                {trainingT("Training.Copy.Importset.ea3b85ed", "Import set")}{" "}
               </Button>
             </Group>
           </Stack>
@@ -596,31 +734,31 @@ export default function TacticsDashboardV2Page() {
       <Modal
         opened={editingSetId !== null}
         onClose={() => setEditingSetId(null)}
-        title="Configurar set"
+        title={trainingT("Training.Copy.Configureset.2cabbadb", "Configure set")}
         size="lg"
       >
         <Stack>
           <SimpleGrid cols={{ base: 1, sm: 2 }}>
             <TextInput
-              label="Nombre"
+              label={trainingT("Training.Copy.Name.562bb157", "Name")}
               value={draftName}
               onChange={(event) => setDraftName(event.currentTarget.value)}
             />
             <TextInput
-              label="Descripción"
+              label={trainingT("Training.Copy.Description.ee00b96f", "Description")}
               value={draftDescription}
               onChange={(event) => setDraftDescription(event.currentTarget.value)}
             />
             <NumberInput
-              label="ELO mínimo"
-              placeholder="Opcional"
+              label={trainingT("Training.Copy.MinimumELO.8f4b3e52", "Minimum ELO")}
+              placeholder={trainingT("Training.Copy.Optional.a6e63474", "Optional")}
               min={0}
               value={draftRatingMin}
               onChange={setDraftRatingMin}
             />
             <NumberInput
-              label="ELO máximo"
-              placeholder="Opcional"
+              label={trainingT("Training.Copy.MaximumELO.86ea8125", "Maximum ELO")}
+              placeholder={trainingT("Training.Copy.Optional.a6e63474", "Optional")}
               min={0}
               value={draftRatingMax}
               onChange={setDraftRatingMax}
@@ -629,10 +767,12 @@ export default function TacticsDashboardV2Page() {
           <TacticsConfigFields config={draftConfig} onChange={setDraftConfig} />
           <Group justify="flex-end">
             <Button variant="default" onClick={() => setEditingSetId(null)}>
-              Cancelar
+              {" "}
+              {trainingT("Training.Copy.Cancel.bb9dbb40", "Cancel")}{" "}
             </Button>
             <Button color="orange" disabled={!draftName.trim()} onClick={saveSettings}>
-              Guardar
+              {" "}
+              {trainingT("Training.Copy.Save.13e51a21", "Save")}{" "}
             </Button>
           </Group>
         </Stack>
@@ -641,7 +781,13 @@ export default function TacticsDashboardV2Page() {
       <Modal
         opened={reviewSetId !== null}
         onClose={() => setReviewSetId(null)}
-        title={reviewSet ? `Revisar · ${reviewSet.name}` : "Revisar set"}
+        title={
+          reviewSet
+            ? trainingT("Training.Copy.Reviewv0.1225646c", "Review · {{v0}}", {
+                v0: reviewSet.name,
+              })
+            : trainingT("Training.Copy.Reviewset.80a50582", "Review set")
+        }
         size="xl"
       >
         {reviewSet && (
@@ -651,8 +797,11 @@ export default function TacticsDashboardV2Page() {
               value={reviewView}
               onChange={(value) => setReviewView(value as "list" | "detail")}
               data={[
-                { value: "list", label: "Lista PGN" },
-                { value: "detail", label: "Detalle y tablero" },
+                { value: "list", label: trainingT("Training.Copy.PGNlist.ae6d1c72", "PGN list") },
+                {
+                  value: "detail",
+                  label: trainingT("Training.Copy.Detailsandboard.97f9fbdf", "Details and board"),
+                },
               ]}
             />
             {reviewView === "list" ? (
@@ -660,14 +809,25 @@ export default function TacticsDashboardV2Page() {
                 <Group justify="space-between">
                   <Text size="sm" c="dimmed">
                     {reviewSet.config.mode === "woodpecker"
-                      ? `Completados en el ciclo ${reviewCycleNumber}: ${reviewCompletedIndexes.length}`
-                      : `Completados: ${reviewCompletedIndexes.length}`}
+                      ? trainingT(
+                          "Training.Copy.Completedincyclev0v1.5c3dbffb",
+                          "Completed in cycle {{v0}}: {{v1}}",
+                          { v0: reviewCycleNumber, v1: reviewCompletedIndexes.length },
+                        )
+                      : trainingT("Training.Copy.Completedv0.03311aa2", "Completed: {{v0}}", {
+                          v0: reviewCompletedIndexes.length,
+                        })}
                   </Text>
-                  <Badge>{reviewTotal} problemas</Badge>
+                  <Badge>
+                    {reviewTotal} {trainingT("Training.Copy.puzzles.29f0f1a4", "puzzles")}
+                  </Badge>
                 </Group>
                 <Text size="xs" c="dimmed">
-                  Selecciona cualquier registro para abrirlo directamente en el tablero. Explorar
-                  otros problemas no cambia tu punto de reanudación.
+                  {" "}
+                  {trainingT(
+                    "Training.Copy.Selectanyrecordtoopen.e9e71457",
+                    "Select any record to open it on the board. Exploring other puzzles does not change your resume point.",
+                  )}{" "}
                 </Text>
                 <ScrollArea h={520} viewportRef={reviewListViewportRef} type="auto">
                   <div
@@ -704,7 +864,10 @@ export default function TacticsDashboardV2Page() {
                           }}
                         >
                           <Text size="sm" truncate>
-                            {embeddedExercise?.title || `Problema ${problemIndex + 1}`}
+                            {embeddedExercise?.title ||
+                              trainingT("Training.Copy.Puzzlev0.c9ca2375", "Puzzle {{v0}}", {
+                                v0: problemIndex + 1,
+                              })}
                             {completed ? " · completado" : ""}
                           </Text>
                         </Button>
@@ -726,7 +889,7 @@ export default function TacticsDashboardV2Page() {
                       <IconChevronLeft size={16} />
                     </ActionIcon>
                     <NumberInput
-                      label="Problema"
+                      label={trainingT("Training.Copy.Puzzle.cc6c1a06", "Puzzle")}
                       w={150}
                       min={1}
                       max={reviewTotal}
@@ -747,11 +910,13 @@ export default function TacticsDashboardV2Page() {
                     </ActionIcon>
                   </Group>
                   <Badge>
-                    {reviewIndex + 1} de {reviewTotal}
+                    {reviewIndex + 1} {trainingT("Training.Copy.of.959a45d4", "of")} {reviewTotal}
                   </Badge>
                 </Group>
                 {reviewLoading ? (
-                  <Text c="dimmed">Cargando problema…</Text>
+                  <Text c="dimmed">
+                    {trainingT("Training.Copy.Loadingpuzzle.f51a73af", "Loading puzzle…")}
+                  </Text>
                 ) : reviewError ? (
                   <Alert color="red">{reviewError}</Alert>
                 ) : reviewExercise ? (
@@ -762,7 +927,11 @@ export default function TacticsDashboardV2Page() {
                       <Code block>{reviewExercise.fen}</Code>
                       <div>
                         <Text size="sm" fw={600}>
-                          Soluciones interpretadas
+                          {" "}
+                          {trainingT(
+                            "Training.Copy.Parsedsolutions.e4a6ad63",
+                            "Parsed solutions",
+                          )}{" "}
                         </Text>
                         {reviewExercise.solutionLines.length > 0 ? (
                           reviewExercise.solutionLines.map((line, index) => (
@@ -772,28 +941,44 @@ export default function TacticsDashboardV2Page() {
                           ))
                         ) : (
                           <Text size="sm" c="dimmed">
-                            Sin solución preparada; requiere motor.
+                            {" "}
+                            {trainingT(
+                              "Training.Copy.Nopreparedsolutionanengine.1544feda",
+                              "No prepared solution; an engine is required.",
+                            )}{" "}
                           </Text>
                         )}
                       </div>
                       <Text size="sm">
-                        {reviewAttempts.filter((a) => a.outcome === "correct").length} aciertos ·{" "}
-                        {reviewAttempts.filter((a) => a.outcome === "incorrect").length} fallos
+                        {reviewAttempts.filter((a) => a.outcome === "correct").length}{" "}
+                        {trainingT("Training.Copy.correct.a2ea3fbc", "correct ·")}{" "}
+                        {reviewAttempts.filter((a) => a.outcome === "incorrect").length}{" "}
+                        {trainingT("Training.Copy.mistakes.5fb1604c", "mistakes")}{" "}
                       </Text>
                       <Button
                         leftSection={<IconPlayerPlay size={16} />}
                         onClick={() => practiceReviewedProblem(reviewIndex)}
                       >
-                        Practicar este problema
+                        {" "}
+                        {trainingT(
+                          "Training.Copy.Practicethispuzzle.9d0effd1",
+                          "Practice this puzzle",
+                        )}{" "}
                       </Button>
                     </Stack>
                     <Textarea
-                      label="Registro PGN"
+                      label={trainingT("Training.Copy.PGNrecord.f7296c15", "PGN record")}
                       readOnly
                       autosize
                       minRows={15}
                       maxRows={24}
-                      value={reviewExercise.sourcePgn || "No hay PGN textual guardado."}
+                      value={
+                        reviewExercise.sourcePgn ||
+                        trainingT(
+                          "Training.Copy.NoPGNtexthasbeen.d994de65",
+                          "No PGN text has been saved.",
+                        )
+                      }
                     />
                   </SimpleGrid>
                 ) : null}
@@ -806,13 +991,16 @@ export default function TacticsDashboardV2Page() {
       <Modal
         opened={deletingSetId !== null}
         onClose={() => setDeletingSetId(null)}
-        title="Eliminar set"
+        title={trainingT("Training.Copy.Deleteset.0d8bbde1", "Delete set")}
         size="sm"
       >
         <Stack>
           <Text size="sm">
-            Se eliminarán el progreso, los ciclos y los intentos. El PGN original permanecerá
-            intacto.
+            {" "}
+            {trainingT(
+              "Training.Copy.Progresscyclesandattemptswill.331b07ea",
+              "Progress, cycles, and attempts will be deleted. The original PGN remains untouched.",
+            )}{" "}
           </Text>
           <Group justify="flex-end">
             <Button
@@ -825,10 +1013,12 @@ export default function TacticsDashboardV2Page() {
                 review(id);
               }}
             >
-              Revisar primero
+              {" "}
+              {trainingT("Training.Copy.Reviewfirst.15a9aa85", "Review first")}{" "}
             </Button>
             <Button color="red" onClick={removeSet}>
-              Eliminar set
+              {" "}
+              {trainingT("Training.Copy.Deleteset.0d8bbde1", "Delete set")}{" "}
             </Button>
           </Group>
         </Stack>
@@ -856,15 +1046,23 @@ function TacticsConfigFields({
   config: TacticsSet["config"];
   onChange: (config: TacticsSet["config"]) => void;
 }) {
+  const { t: trainingT } = useTrainingTranslation();
+
   return (
     <Stack>
       <SimpleGrid cols={{ base: 1, sm: 2 }}>
         <Select
-          label="Primera jugada"
+          label={trainingT("Training.Copy.Firstmove.5f131f9a", "First move")}
           value={config.startingActor}
           data={[
-            { value: "student", label: "El estudiante" },
-            { value: "opponent", label: "El rival" },
+            {
+              value: "student",
+              label: trainingT("Training.Copy.Thestudent.5c566d78", "The student"),
+            },
+            {
+              value: "opponent",
+              label: trainingT("Training.Copy.Theopponent.16ea601a", "The opponent"),
+            },
           ]}
           onChange={(value) =>
             value &&
@@ -872,12 +1070,15 @@ function TacticsConfigFields({
           }
         />
         <Select
-          label="Variantes"
+          label={trainingT("Training.Copy.Variations.64774cce", "Variations")}
           value={config.variationPolicy}
           data={[
-            { value: "mainline", label: "Línea principal" },
-            { value: "opponentResponses", label: "Respuestas del rival" },
-            { value: "all", label: "Todas" },
+            { value: "mainline", label: trainingT("Training.Copy.Mainline.49e68e3d", "Main line") },
+            {
+              value: "opponentResponses",
+              label: trainingT("Training.Copy.Opponentresponses.999dc9d0", "Opponent responses"),
+            },
+            { value: "all", label: trainingT("Training.Copy.All.aff4d19d", "All") },
           ]}
           onChange={(value) =>
             value &&
@@ -888,12 +1089,15 @@ function TacticsConfigFields({
           }
         />
         <Select
-          label="Validación"
+          label={trainingT("Training.Copy.Validation.c1e3865f", "Validation")}
           value={config.validationMode}
           data={[
-            { value: "auto", label: "Automática" },
-            { value: "prepared", label: "Solución PGN" },
-            { value: "engine", label: "Motor" },
+            { value: "auto", label: trainingT("Training.Copy.Automatic.e51e19df", "Automatic") },
+            {
+              value: "prepared",
+              label: trainingT("Training.Copy.PGNsolution.c4ca9361", "PGN solution"),
+            },
+            { value: "engine", label: trainingT("Training.Copy.Engine.b25a14f2", "Engine") },
           ]}
           onChange={(value) =>
             value &&
@@ -901,10 +1105,10 @@ function TacticsConfigFields({
           }
         />
         <Select
-          label="Tipo"
+          label={trainingT("Training.Copy.Type.3868d284", "Type")}
           value={config.mode}
           data={[
-            { value: "guided", label: "Guiado" },
+            { value: "guided", label: trainingT("Training.Copy.Guided.57bd258f", "Guided") },
             { value: "woodpecker", label: "Woodpecker" },
           ]}
           onChange={(value) =>
@@ -913,7 +1117,12 @@ function TacticsConfigFields({
         />
       </SimpleGrid>
       <Group justify="space-between">
-        <Text size="sm">Tolerancia de alternativas</Text>
+        <Text size="sm">
+          {trainingT(
+            "Training.Copy.Alternativemovetolerance.c8f821d8",
+            "Alternative move tolerance",
+          )}
+        </Text>
         <NumberInput
           w={120}
           min={0}
@@ -926,7 +1135,11 @@ function TacticsConfigFields({
       </Group>
       {config.mode === "woodpecker" && (
         <Text size="xs" c="dimmed">
-          Los ciclos registran tiempo y fallos, pero no terminan por límites.
+          {" "}
+          {trainingT(
+            "Training.Copy.Cyclesrecordtimeandmistakes.24fef14e",
+            "Cycles record time and mistakes but do not end at a limit.",
+          )}{" "}
         </Text>
       )}
     </Stack>

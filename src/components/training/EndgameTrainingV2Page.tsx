@@ -1,3 +1,5 @@
+import { useTranslation as useTrainingTranslation } from "react-i18next";
+import i18n from "i18next";
 import {
   Alert,
   Badge,
@@ -64,49 +66,69 @@ import {
 const BUNDLED_ENDGAMES_VERSION = 1;
 const bundledEndgameFiles = ["FinalesParte1.pgn", "FinalesParte2.pgn", "FinalesParte3.pgn"];
 
-const themeMetadata: Array<{
+const getThemeMetadata = (
+  trainingT: typeof i18n.t = i18n.t,
+): Array<{
   id: EndgameTheme;
   label: string;
   description: string;
-}> = [
+}> => [
   {
     id: "pawn",
-    label: "Finales de peones",
-    description: "Oposición, peones pasados, carreras y casillas clave.",
+    label: trainingT("Training.Copy.Pawnendgames.1d9ad580", "Pawn endgames"),
+    description: trainingT(
+      "Training.Copy.Oppositionpassedpawnspawnraces.1613b20c",
+      "Opposition, passed pawns, pawn races, and key squares.",
+    ),
   },
   {
     id: "rook",
-    label: "Finales de torres",
-    description: "Torres activas, peones pasados y posiciones teóricas.",
+    label: trainingT("Training.Copy.Rookendgames.5017d5d9", "Rook endgames"),
+    description: trainingT(
+      "Training.Copy.Activerookspassedpawnsand.8fbd6a79",
+      "Active rooks, passed pawns, and theoretical positions.",
+    ),
   },
   {
     id: "minorPiece",
-    label: "Piezas menores",
-    description: "Caballos, alfiles y sus finales contra peones.",
+    label: trainingT("Training.Copy.Minorpieces.3037b1a3", "Minor pieces"),
+    description: trainingT(
+      "Training.Copy.Knightsbishopsandtheirendgames.fc5978ce",
+      "Knights, bishops, and their endgames against pawns.",
+    ),
   },
   {
     id: "queen",
-    label: "Finales de damas",
-    description: "Técnica de mate, jaques y coordinación con el rey.",
+    label: trainingT("Training.Copy.Queenendgames.e698cea4", "Queen endgames"),
+    description: trainingT(
+      "Training.Copy.Matingtechniquechecksandking.b4e7aea3",
+      "Mating technique, checks, and king coordination.",
+    ),
   },
   {
     id: "mixed",
-    label: "Material mixto",
-    description: "Finales con varias clases de piezas en juego.",
+    label: trainingT("Training.Copy.Mixedmaterial.d33aeb87", "Mixed material"),
+    description: trainingT(
+      "Training.Copy.Endgameswithseveralkindsof.1b3d107d",
+      "Endgames with several kinds of pieces on the board.",
+    ),
   },
   {
     id: "other",
-    label: "Otros finales",
-    description: "Posiciones especiales y ejercicios complementarios.",
+    label: trainingT("Training.Copy.Otherendgames.75f81a60", "Other endgames"),
+    description: trainingT(
+      "Training.Copy.Specialpositionsandsupplementaryexercises.08022247",
+      "Special positions and supplementary exercises.",
+    ),
   },
 ];
 
-function filename(path: string) {
+function filename(path: string, trainingT: typeof i18n.t = i18n.t) {
   return (
     path
       .split(/[\\/]/)
       .pop()
-      ?.replace(/\.[^.]+$/, "") || "Set de finales"
+      ?.replace(/\.[^.]+$/, "") || trainingT("Training.Copy.Endgameset.cb6b7408", "Endgame set")
   );
 }
 
@@ -117,10 +139,13 @@ function objectiveFromTablebase(category: string): TrainingObjective {
   return "unknown";
 }
 
-function objectiveLabel(objective: TrainingObjective) {
-  return { win: "Ganar", draw: "Mantener tablas", loss: "Resistir", unknown: "Por definir" }[
-    objective
-  ];
+function objectiveLabel(objective: TrainingObjective, trainingT: typeof i18n.t = i18n.t) {
+  return {
+    win: trainingT("Training.Copy.Win.fc572f64", "Win"),
+    draw: trainingT("Training.Copy.Holdadraw.1c931742", "Hold a draw"),
+    loss: trainingT("Training.Copy.Defend.69d716e2", "Defend"),
+    unknown: trainingT("Training.Copy.Tobedetermined.20317191", "To be determined"),
+  }[objective];
 }
 
 function objectiveColor(objective: TrainingObjective) {
@@ -128,6 +153,11 @@ function objectiveColor(objective: TrainingObjective) {
 }
 
 export default function EndgameTrainingV2Page() {
+  const { t: trainingT } = useTrainingTranslation();
+
+  const themeMetadata = getThemeMetadata(trainingT);
+  useTrainingTranslation();
+
   const navigate = useNavigate();
   const [areas, setAreas] = useAtom(trainingAreasAtom);
   const [, setTabs] = useAtom(tabsAtom);
@@ -197,8 +227,13 @@ export default function EndgameTrainingV2Page() {
           skipInvalid: true,
         });
         return {
-          name: `Contenido incluido · ${file}`,
-          description: "Colección incluida con Chess Lab.",
+          name: trainingT("Training.Copy.Includedcontentv0.e121b272", "Included content · {{v0}}", {
+            v0: file,
+          }),
+          description: trainingT(
+            "Training.Copy.CollectionincludedwithChessLab.7e9e4b92",
+            "Collection included with Chess Lab.",
+          ),
           records,
         };
       }),
@@ -214,12 +249,19 @@ export default function EndgameTrainingV2Page() {
         setFeedback({
           text:
             error instanceof Error
-              ? `No se pudo cargar el contenido incluido: ${error.message}`
-              : "No se pudo cargar el contenido incluido.",
+              ? trainingT(
+                  "Training.Copy.Couldnotloadincludedcontent.74d42938",
+                  "Could not load included content: {{v0}}",
+                  { v0: error.message },
+                )
+              : trainingT(
+                  "Training.Copy.Couldnotloadincludedcontent.7fcd5f76",
+                  "Could not load included content.",
+                ),
           color: "yellow",
         });
       });
-  }, [areas.endgames.bundledContentVersion, setAreas]);
+  }, [areas.endgames.bundledContentVersion, setAreas, trainingT]);
 
   async function importSet() {
     const selected = await open({
@@ -232,18 +274,33 @@ export default function EndgameTrainingV2Page() {
         requireExplicitFen: true,
         skipInvalid: true,
       });
-      if (records.length === 0) throw new Error("El PGN no contiene posiciones válidas.");
-      const importedSetName = name.trim() || filename(selected);
+      if (records.length === 0)
+        throw new Error(
+          trainingT(
+            "Training.Copy.ThePGNcontainsnovalid.b0f13444",
+            "The PGN contains no valid positions.",
+          ),
+        );
+      const importedSetName = name.trim() || filename(selected, trainingT);
       setAreas((previous) => ({
         ...previous,
         endgames: addEndgameSet(previous.endgames, importedSetName, description.trim(), records),
       }));
       setName("");
       setDescription("");
-      setFeedback({ text: `Set «${importedSetName}» importado con ${records.length} posiciones.` });
+      setFeedback({
+        text: trainingT(
+          "Training.Copy.Setv0importedwithv1.f380ca3c",
+          "Set “{{v0}}” imported with {{v1}} positions.",
+          { v0: importedSetName, v1: records.length },
+        ),
+      });
     } catch (error) {
       setFeedback({
-        text: error instanceof Error ? error.message : "No se pudo importar el set.",
+        text:
+          error instanceof Error
+            ? error.message
+            : trainingT("Training.Copy.Couldnotimporttheset.90285448", "Could not import the set."),
         color: "red",
       });
     }
@@ -288,7 +345,18 @@ export default function EndgameTrainingV2Page() {
     }
     setResolvingSetId(null);
     setFeedback({
-      text: `${resolved} objetivos calculados${failed ? `; ${failed} no disponibles` : ""}.`,
+      text: trainingT(
+        "Training.Copy.v0objectivescalculatedv1.e4de69e7",
+        "{{v0}} objectives calculated{{v1}}.",
+        {
+          v0: resolved,
+          v1: failed
+            ? trainingT("Training.Copy.v0unavailable.86830fd9", "; {{v0}} unavailable", {
+                v0: failed,
+              })
+            : "",
+        },
+      ),
       color: failed ? "yellow" : undefined,
     });
   }
@@ -311,19 +379,31 @@ export default function EndgameTrainingV2Page() {
       setFeedback({
         text:
           opponentMode === "maia"
-            ? "Instala y activa Maia 3, o selecciona Stockfish."
-            : "Instala y activa Stockfish u otro motor local.",
+            ? trainingT(
+                "Training.Copy.InstallandenableMaia3.1f0572bc",
+                "Install and enable Maia 3, or select Stockfish.",
+              )
+            : trainingT(
+                "Training.Copy.InstallandenableStockfishor.f6a203ba",
+                "Install and enable Stockfish or another local engine.",
+              ),
         color: "yellow",
       });
       return;
     }
     const [chessPosition] = positionFromFen(position.fen);
     if (!chessPosition) {
-      setFeedback({ text: "La posición FEN no es válida.", color: "red" });
+      setFeedback({
+        text: trainingT(
+          "Training.Copy.TheFENpositionisinvalid.97da3f3f",
+          "The FEN position is invalid.",
+        ),
+        color: "red",
+      });
       return;
     }
     setInputColor(chessPosition.turn);
-    setPlayer1({ type: "human", name: "Estudiante" });
+    setPlayer1({ type: "human", name: trainingT("Training.Copy.Student.789a6356", "Student") });
     setPlayer2({
       type: "engine",
       engine: selectedEngine,
@@ -353,7 +433,9 @@ export default function EndgameTrainingV2Page() {
     await navigate({ to: "/" });
     await launchTrainingPosition({
       fen: position.fen,
-      name: `Análisis · ${position.title}`,
+      name: trainingT("Training.Copy.Analysisv0.b7ffacfd", "Analysis · {{v0}}", {
+        v0: position.title,
+      }),
       type: "analysis",
       setTabs,
       setActiveTab,
@@ -370,19 +452,36 @@ export default function EndgameTrainingV2Page() {
       endgames: deleteEndgameSet(previous.endgames, deletingSetId),
     }));
     setDeletingSetId(null);
-    setFeedback({ text: `Set «${set.name}» eliminado.` });
+    setFeedback({
+      text: trainingT("Training.Copy.Setv0deleted.2c6952d5", "Set “{{v0}}” deleted.", {
+        v0: set.name,
+      }),
+    });
   }
 
   return (
     <Container size="xl" py="md">
       <Stack gap="lg">
         <Group align="flex-start">
-          <Button component={Link} to="/training" variant="subtle" p="xs" aria-label="Volver">
+          <Button
+            component={Link}
+            to="/training"
+            variant="subtle"
+            p="xs"
+            aria-label={trainingT("Training.Copy.Back.ab26ae7b", "Back")}
+          >
             <IconArrowLeft size={20} />
           </Button>
           <div>
-            <Title order={2}>Entrenamiento de Finales</Title>
-            <Text c="dimmed">Elige un tema y practica posiciones con objetivos concretos.</Text>
+            <Title order={2}>
+              {trainingT("Training.Copy.Endgametraining.d2c99939", "Endgame training")}
+            </Title>
+            <Text c="dimmed">
+              {trainingT(
+                "Training.Copy.Chooseathemeandpractice.30a98294",
+                "Choose a theme and practice positions with specific objectives.",
+              )}
+            </Text>
           </div>
         </Group>
 
@@ -395,25 +494,38 @@ export default function EndgameTrainingV2Page() {
         <Card withBorder>
           <Group justify="space-between" align="flex-end">
             <div>
-              <Text fw={600}>Rival de práctica</Text>
+              <Text fw={600}>
+                {trainingT("Training.Copy.Practiceopponent.95f64dc7", "Practice opponent")}
+              </Text>
               <Text size="sm" c="dimmed">
-                La partida comienza automáticamente al pulsar Jugar.
+                {" "}
+                {trainingT(
+                  "Training.Copy.Thegamestartsautomaticallywhen.248688bd",
+                  "The game starts automatically when you press Play.",
+                )}{" "}
               </Text>
             </div>
             <Select
               w={280}
-              label="Motor predeterminado"
+              label={trainingT("Training.Copy.Defaultengine.4d45d471", "Default engine")}
               value={opponentMode}
               data={[
                 {
                   value: "maia",
-                  label: maiaEngine ? `Maia máximo · ${maiaEngine.name}` : "Maia no instalado",
+                  label: maiaEngine
+                    ? trainingT("Training.Copy.MaximumMaiav0.32eb5b83", "Maximum Maia · {{v0}}", {
+                        v0: maiaEngine.name,
+                      })
+                    : trainingT("Training.Copy.Maianotinstalled.1dd2fb71", "Maia not installed"),
                 },
                 {
                   value: "stockfish",
                   label: stockfishEngine
                     ? `Stockfish · ${stockfishEngine.name}`
-                    : "Stockfish no instalado",
+                    : trainingT(
+                        "Training.Copy.Stockfishnotinstalled.86d6bf26",
+                        "Stockfish not installed",
+                      ),
                 },
               ]}
               onChange={(value) => value && setOpponentMode(value as typeof opponentMode)}
@@ -421,7 +533,11 @@ export default function EndgameTrainingV2Page() {
           </Group>
           {!selectedEngine && (
             <Alert color="yellow" mt="md">
-              El motor seleccionado no está instalado o activo.
+              {" "}
+              {trainingT(
+                "Training.Copy.Theselectedengineisnot.0223c2c7",
+                "The selected engine is not installed or active.",
+              )}{" "}
             </Alert>
           )}
         </Card>
@@ -431,12 +547,19 @@ export default function EndgameTrainingV2Page() {
             <Title order={3}>
               {selectedTheme
                 ? themeMetadata.find((theme) => theme.id === selectedTheme)?.label
-                : "Finales por tema"}
+                : trainingT("Training.Copy.Endgamesbytheme.00e25467", "Endgames by theme")}
             </Title>
             <Text size="sm" c="dimmed">
               {selectedTheme
-                ? "Elige la posición que quieres practicar."
-                : `${includedCompleted} de ${bundledPositions.length} finales incluidos completados.`}
+                ? trainingT(
+                    "Training.Copy.Chooseapositiontopractice.21897c47",
+                    "Choose a position to practice.",
+                  )
+                : trainingT(
+                    "Training.Copy.v0ofv1includedendgames.bd6b6fc6",
+                    "{{v0}} of {{v1}} included endgames completed.",
+                    { v0: includedCompleted, v1: bundledPositions.length },
+                  )}
             </Text>
           </div>
           {selectedTheme && (
@@ -448,11 +571,16 @@ export default function EndgameTrainingV2Page() {
                   loading={resolvingSetId === `bundled-${selectedTheme}`}
                   onClick={resolveIncludedThemeObjectives}
                 >
-                  Calcular objetivos del tema
+                  {" "}
+                  {trainingT(
+                    "Training.Copy.Calculatethemeobjectives.410764ed",
+                    "Calculate theme objectives",
+                  )}{" "}
                 </Button>
               )}
               <Button variant="default" onClick={() => setSelectedTheme(null)}>
-                Ver todos los temas
+                {" "}
+                {trainingT("Training.Copy.Viewallthemes.67a3bfda", "View all themes")}{" "}
               </Button>
             </Group>
           )}
@@ -484,7 +612,8 @@ export default function EndgameTrainingV2Page() {
                       </Text>
                       <Progress value={(completed / positions.length) * 100} color="teal" mt="md" />
                       <Text size="xs" c="dimmed" mt={4}>
-                        {completed} completados
+                        {completed}{" "}
+                        {trainingT("Training.Copy.completed.9f880723", "completed")}{" "}
                       </Text>
                     </div>
                     <Button
@@ -493,7 +622,8 @@ export default function EndgameTrainingV2Page() {
                       rightSection={<IconChevronRight size={16} />}
                       onClick={() => setSelectedTheme(theme.id)}
                     >
-                      Abrir tema
+                      {" "}
+                      {trainingT("Training.Copy.Opentheme.2c1b7643", "Open theme")}{" "}
                     </Button>
                   </Stack>
                 </Card>
@@ -501,7 +631,12 @@ export default function EndgameTrainingV2Page() {
             })}
           </SimpleGrid>
         ) : visibleThemePositions.length === 0 ? (
-          <Alert color="blue">No hay posiciones incluidas en este tema.</Alert>
+          <Alert color="blue">
+            {trainingT(
+              "Training.Copy.Noincludedpositionsforthis.2378ec53",
+              "No included positions for this theme.",
+            )}
+          </Alert>
         ) : (
           <SimpleGrid cols={{ base: 1, md: 2, lg: 3 }}>
             {visibleThemePositions.map(({ position, setId }, index) => (
@@ -519,16 +654,26 @@ export default function EndgameTrainingV2Page() {
         )}
 
         <div>
-          <Title order={3}>Tus sets de finales</Title>
+          <Title order={3}>
+            {trainingT("Training.Copy.Yourendgamesets.bc0a26f3", "Your endgame sets")}
+          </Title>
           <Text size="sm" c="dimmed">
-            Aquí puedes preparar objetivos, practicar y eliminar contenido importado.
+            {" "}
+            {trainingT(
+              "Training.Copy.Prepareobjectivespracticeandremove.d29f4af3",
+              "Prepare objectives, practice, and remove imported content here.",
+            )}{" "}
           </Text>
         </div>
 
         {userSets.length === 0 ? (
           <Card withBorder>
             <Text c="dimmed" ta="center" py="lg">
-              Todavía no has importado sets propios.
+              {" "}
+              {trainingT(
+                "Training.Copy.Youhavenotimportedany.bcb93682",
+                "You have not imported any sets yet.",
+              )}{" "}
             </Text>
           </Card>
         ) : (
@@ -545,7 +690,8 @@ export default function EndgameTrainingV2Page() {
                     <div>
                       <Title order={4}>{set.name}</Title>
                       <Text size="sm" c="dimmed">
-                        {set.description || "Set importado por el usuario."}
+                        {set.description ||
+                          trainingT("Training.Copy.Userimportedset.aab5b452", "User-imported set.")}
                       </Text>
                     </div>
                     <Group>
@@ -558,7 +704,8 @@ export default function EndgameTrainingV2Page() {
                         leftSection={<IconTrash size={15} />}
                         onClick={() => setDeletingSetId(set.id)}
                       >
-                        Eliminar
+                        {" "}
+                        {trainingT("Training.Copy.Delete.c9894cf0", "Delete")}{" "}
                       </Button>
                     </Group>
                   </Group>
@@ -570,11 +717,19 @@ export default function EndgameTrainingV2Page() {
                       loading={resolvingSetId === set.id}
                       onClick={() => resolveObjectives(set)}
                     >
-                      Calcular objetivos
+                      {" "}
+                      {trainingT(
+                        "Training.Copy.Calculateobjectives.7219a82e",
+                        "Calculate objectives",
+                      )}{" "}
                     </Button>
                     {resolvingSetId === set.id && (
                       <Text size="sm" c="dimmed">
-                        Consultando tablebase…
+                        {" "}
+                        {trainingT(
+                          "Training.Copy.Queryingtablebase.5fa95349",
+                          "Querying tablebase…",
+                        )}{" "}
                       </Text>
                     )}
                   </Group>
@@ -599,16 +754,32 @@ export default function EndgameTrainingV2Page() {
                               w={130}
                               value={position.objective}
                               data={[
-                                { value: "unknown", label: "Por definir" },
-                                { value: "win", label: "Ganar" },
-                                { value: "draw", label: "Tablas" },
-                                { value: "loss", label: "Resistir" },
+                                {
+                                  value: "unknown",
+                                  label: trainingT(
+                                    "Training.Copy.Tobedetermined.20317191",
+                                    "To be determined",
+                                  ),
+                                },
+                                {
+                                  value: "win",
+                                  label: trainingT("Training.Copy.Win.fc572f64", "Win"),
+                                },
+                                {
+                                  value: "draw",
+                                  label: trainingT("Training.Copy.Draw.9c0dd07e", "Draw"),
+                                },
+                                {
+                                  value: "loss",
+                                  label: trainingT("Training.Copy.Defend.69d716e2", "Defend"),
+                                },
                               ]}
                               onChange={(value) => setManualObjective(position.id, value)}
                             />
                             {position.progress.completed && (
                               <Badge color="teal" leftSection={<IconCheck size={12} />}>
-                                Completado
+                                {" "}
+                                {trainingT("Training.Copy.Completed.856641d2", "Completed")}{" "}
                               </Badge>
                             )}
                             <Button
@@ -617,7 +788,8 @@ export default function EndgameTrainingV2Page() {
                               leftSection={<IconSearch size={14} />}
                               onClick={() => analyzePosition(position)}
                             >
-                              Analizar
+                              {" "}
+                              {trainingT("Training.Copy.Analyze.67ffbe0d", "Analyze")}{" "}
                             </Button>
                             <Button
                               size="xs"
@@ -625,7 +797,8 @@ export default function EndgameTrainingV2Page() {
                               leftSection={<IconPlayerPlay size={14} />}
                               onClick={() => playPosition(position, set.id)}
                             >
-                              Jugar
+                              {" "}
+                              {trainingT("Training.Copy.Play.b61eda6f", "Play")}{" "}
                             </Button>
                           </Group>
                         </Group>
@@ -643,27 +816,33 @@ export default function EndgameTrainingV2Page() {
             <Group>
               <IconUpload size={24} color="var(--mantine-color-teal-6)" />
               <div>
-                <Text fw={600}>Importar un set propio</Text>
+                <Text fw={600}>
+                  {trainingT("Training.Copy.Importyourownset.587a23b9", "Import your own set")}
+                </Text>
                 <Text size="sm" c="dimmed">
-                  Añade PGN con una FEN por ejercicio. Esta opción se mantiene al final porque es
-                  una herramienta avanzada.
+                  {" "}
+                  {trainingT(
+                    "Training.Copy.AddPGNfileswithone.dfb387a5",
+                    "Add PGN files with one FEN per exercise using this advanced tool.",
+                  )}{" "}
                 </Text>
               </div>
             </Group>
             <SimpleGrid cols={{ base: 1, md: 2 }}>
               <TextInput
-                label="Nombre del set"
+                label={trainingT("Training.Copy.Setname.a54101c6", "Set name")}
                 value={name}
                 onChange={(event) => setName(event.currentTarget.value)}
               />
               <TextInput
-                label="Descripción"
+                label={trainingT("Training.Copy.Description.ee00b96f", "Description")}
                 value={description}
                 onChange={(event) => setDescription(event.currentTarget.value)}
               />
             </SimpleGrid>
             <Button color="teal" leftSection={<IconUpload size={16} />} onClick={importSet}>
-              Seleccionar archivo PGN
+              {" "}
+              {trainingT("Training.Copy.SelectPGNfile.ab7fed1d", "Select PGN file")}{" "}
             </Button>
           </Stack>
         </Card>
@@ -672,20 +851,25 @@ export default function EndgameTrainingV2Page() {
       <Modal
         opened={deletingSetId !== null}
         onClose={() => setDeletingSetId(null)}
-        title="Eliminar set"
+        title={trainingT("Training.Copy.Deleteset.0d8bbde1", "Delete set")}
         size="sm"
       >
         <Stack>
           <Text size="sm">
-            Se eliminarán sus posiciones y todo el progreso asociado. Esta acción no afecta a los
-            finales incluidos.
+            {" "}
+            {trainingT(
+              "Training.Copy.Itspositionsandallrelated.56316447",
+              "Its positions and all related progress will be deleted. Included endgames are unaffected.",
+            )}{" "}
           </Text>
           <Group justify="flex-end">
             <Button variant="default" onClick={() => setDeletingSetId(null)}>
-              Cancelar
+              {" "}
+              {trainingT("Training.Copy.Cancel.bb9dbb40", "Cancel")}{" "}
             </Button>
             <Button color="red" onClick={removeSet}>
-              Eliminar set
+              {" "}
+              {trainingT("Training.Copy.Deleteset.0d8bbde1", "Delete set")}{" "}
             </Button>
           </Group>
         </Stack>
@@ -709,6 +893,8 @@ function EndgamePositionCard({
   onAnalyze: () => void;
   onObjectiveChange?: (value: string | null) => void;
 }) {
+  const { t: trainingT } = useTrainingTranslation();
+
   return (
     <Card withBorder>
       <Stack h="100%" justify="space-between">
@@ -717,10 +903,11 @@ function EndgamePositionCard({
             <Badge variant="outline">{index + 1}</Badge>
             {position.progress.completed ? (
               <Badge color="teal" leftSection={<IconTrophy size={12} />}>
-                Completado
+                {" "}
+                {trainingT("Training.Copy.Completed.856641d2", "Completed")}{" "}
               </Badge>
             ) : (
-              <Badge color="gray">Pendiente</Badge>
+              <Badge color="gray">{trainingT("Training.Copy.Pending.2ef68536", "Pending")}</Badge>
             )}
           </Group>
           <Text fw={600} mt="md">
@@ -736,34 +923,42 @@ function EndgamePositionCard({
               variant="light"
               leftSection={<IconLock size={11} />}
             >
-              {objectiveLabel(position.objective)}
+              {objectiveLabel(position.objective, trainingT)}
             </Badge>
           ) : (
             <Select
               mt="sm"
-              label="Objetivo de preparación"
+              label={trainingT("Training.Copy.Preparationgoal.c75e6c82", "Preparation goal")}
               value={position.objective}
               data={[
-                { value: "unknown", label: "Por definir" },
-                { value: "win", label: "Ganar" },
-                { value: "draw", label: "Tablas" },
-                { value: "loss", label: "Resistir" },
+                {
+                  value: "unknown",
+                  label: trainingT("Training.Copy.Tobedetermined.20317191", "To be determined"),
+                },
+                { value: "win", label: trainingT("Training.Copy.Win.fc572f64", "Win") },
+                { value: "draw", label: trainingT("Training.Copy.Draw.9c0dd07e", "Draw") },
+                { value: "loss", label: trainingT("Training.Copy.Defend.69d716e2", "Defend") },
               ]}
               onChange={onObjectiveChange}
             />
           )}
           {position.progress.attempts > 0 && (
             <Text size="xs" c="dimmed" mt="sm">
-              {position.progress.successes} éxitos en {position.progress.attempts} intentos
+              {position.progress.successes}{" "}
+              {trainingT("Training.Copy.successesin.a6eaa679", "successes in")}{" "}
+              {position.progress.attempts}{" "}
+              {trainingT("Training.Copy.attempts.59675592", "attempts")}{" "}
             </Text>
           )}
         </div>
         <Group grow mt="md">
           <Button variant="default" leftSection={<IconSearch size={15} />} onClick={onAnalyze}>
-            Analizar
+            {" "}
+            {trainingT("Training.Copy.Analyze.67ffbe0d", "Analyze")}{" "}
           </Button>
           <Button color="teal" leftSection={<IconPlayerPlay size={15} />} onClick={onPlay}>
-            Jugar
+            {" "}
+            {trainingT("Training.Copy.Play.b61eda6f", "Play")}{" "}
           </Button>
         </Group>
       </Stack>

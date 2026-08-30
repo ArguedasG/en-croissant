@@ -27,7 +27,7 @@ import { getChesscomGame } from "@/utils/chess.com/api";
 import { chessopsError } from "@/utils/chessops";
 import { createFile, openFile } from "@/utils/files";
 import { getLichessGame } from "@/utils/lichess/api";
-import { isInTempDir, type Tab } from "@/utils/tabs";
+import { isEmptyAnalysisTab, isInTempDir, type Tab } from "@/utils/tabs";
 import { defaultTree, getGameName } from "@/utils/treeReducer";
 import { unwrap } from "@/utils/unwrap";
 import GenericCard from "../common/GenericCard";
@@ -62,7 +62,7 @@ export default function ImportModal({
   const [importType, setImportType] = useState<ImportType>("PGN");
   const [filetype, setFiletype] = useState<FileType>("game");
   const [loading, setLoading] = useState(false);
-  const [, setCurrentTab] = useAtom(currentTabAtom);
+  const [currentTab, setCurrentTab] = useAtom(currentTabAtom);
   const [fenError, setFenError] = useState("");
 
   const [save, setSave] = useState(false);
@@ -132,7 +132,9 @@ export default function ImportModal({
         } else {
           const tempFile = await resolve(await tempDir(), `import_${Date.now()}.pgn`);
           await writeTextFile(tempFile, pgn);
-          await openFile(tempFile, setTabs, setActiveTab);
+          await openFile(tempFile, setTabs, setActiveTab, {
+            reuseTabId: isEmptyAnalysisTab(currentTab) ? currentTab?.value : undefined,
+          });
         }
       }
     } else if (importType === "Link") {
@@ -196,6 +198,7 @@ export default function ImportModal({
       });
     }
     setLoading(false);
+    setOpenModal(false);
   }
 
   const Input = match(importType)

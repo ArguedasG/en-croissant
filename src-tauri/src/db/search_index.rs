@@ -1,16 +1,56 @@
 use std::{
-    fs::{File, OpenOptions},
-    io::{self, BufReader, BufWriter, Read, Write},
+    fs::File,
+    io::{self, BufReader, Read, Seek, SeekFrom, Write},
     path::{Path, PathBuf},
     sync::Arc,
 };
 
 use memmap2::Mmap;
 use rayon::prelude::*;
+use rkyv::validation::{archive::ArchiveValidator, ArchiveContext};
 use rkyv::{Archive, Deserialize, Serialize};
 
+/// Preserve rkyv's bounds/alignment validation while allowing cancellation inside legacy archives.
+struct CancellableArchive<'a> {
+    inner: ArchiveValidator<'a>,
+    cancelled: &'a dyn Fn() -> bool,
+}
+
+// SAFETY: Every pointer/range check is forwarded unchanged to ArchiveValidator.
+// Cancellation only adds an earlier error; it never approves an unchecked pointer.
+unsafe impl ArchiveContext<rkyv::rancor::Error> for CancellableArchive<'_> {
+    fn check_subtree_ptr(
+        &mut self,
+        ptr: *const u8,
+        layout: &std::alloc::Layout,
+    ) -> Result<(), rkyv::rancor::Error> {
+        if (self.cancelled)() {
+            return Err(<rkyv::rancor::Error as rkyv::rancor::Source>::new(
+                io::Error::new(io::ErrorKind::Interrupted, "Search stopped"),
+            ));
+        }
+        self.inner.check_subtree_ptr(ptr, layout)
+    }
+    unsafe fn push_subtree_range(
+        &mut self,
+        root: *const u8,
+        end: *const u8,
+    ) -> Result<std::ops::Range<usize>, rkyv::rancor::Error> {
+        // SAFETY: Forwarding the caller's identical range and preconditions.
+        unsafe { self.inner.push_subtree_range(root, end) }
+    }
+    unsafe fn pop_subtree_range(
+        &mut self,
+        range: std::ops::Range<usize>,
+    ) -> Result<(), rkyv::rancor::Error> {
+        // SAFETY: Range came from the same underlying validator.
+        unsafe { self.inner.pop_subtree_range(range) }
+    }
+}
+
 const MAGIC: &[u8; 4] = b"ECSI";
-const VERSION: u32 = 4;
+const VERSION: u32 = 5;
+pub const INDEX_BATCH_SIZE: usize = 4096;
 const HEADER_SIZE: usize = 8;
 
 fn verify_header(header: &[u8]) -> io::Result<()> {
@@ -29,7 +69,7 @@ fn verify_header(header: &[u8]) -> io::Result<()> {
     }
 
     let version = u32::from_le_bytes(header[4..8].try_into().unwrap());
-    if version != VERSION {
+    if version != VERSION && version != 4 {
         return Err(io::Error::new(
             io::ErrorKind::InvalidData,
             format!("Unsupported version: {} (expected {})", version, VERSION),
@@ -112,22 +152,13 @@ impl SearchIndex {
     }
 
     pub fn write_to<P: AsRef<Path>>(&self, path: P) -> io::Result<()> {
-        let file = OpenOptions::new()
-            .write(true)
-            .create(true)
-            .truncate(true)
-            .open(path)?;
-
-        let mut writer = BufWriter::new(file);
-
-        writer.write_all(MAGIC)?;
-        writer.write_all(&VERSION.to_le_bytes())?;
-
-        let bytes = rkyv::to_bytes::<rkyv::rancor::Error>(self)
-            .map_err(|e| io::Error::other(format!("Serialization error: {}", e)))?;
-
-        writer.write_all(&bytes)?;
-        writer.flush()
+        let mut writer = SearchIndexWriter::new(path.as_ref())?;
+        for entries in self.entries.chunks(INDEX_BATCH_SIZE) {
+            writer.write_batch(&SearchIndex {
+                entries: entries.to_vec(),
+            })?;
+        }
+        writer.finish()
     }
 }
 
@@ -210,65 +241,203 @@ impl SearchGameEntry {
     }
 }
 
+/// Independent archive blocks bound construction memory. Publication never truncates a live mmap.
+pub struct SearchIndexWriter {
+    file: tempfile::NamedTempFile,
+    destination: PathBuf,
+    count: u64,
+}
+impl SearchIndexWriter {
+    pub fn new(destination: &Path) -> io::Result<Self> {
+        Self::with_source(destination, "")
+    }
+    pub fn with_source(destination: &Path, source: &str) -> io::Result<Self> {
+        let mut file =
+            tempfile::NamedTempFile::new_in(destination.parent().unwrap_or(Path::new(".")))?;
+        file.write_all(MAGIC)?;
+        file.write_all(&VERSION.to_le_bytes())?;
+        file.write_all(&0u64.to_le_bytes())?;
+        file.write_all(&(source.len() as u64).to_le_bytes())?;
+        file.write_all(source.as_bytes())?;
+        file.write_all(&[0; 8][..(8 - source.len() % 8) % 8])?;
+        Ok(Self {
+            file,
+            destination: destination.to_path_buf(),
+            count: 0,
+        })
+    }
+    pub fn write_batch(&mut self, batch: &SearchIndex) -> io::Result<()> {
+        let bytes = rkyv::to_bytes::<rkyv::rancor::Error>(batch)
+            .map_err(|e| io::Error::other(e.to_string()))?;
+        self.file.write_all(&(bytes.len() as u64).to_le_bytes())?;
+        self.file.write_all(&bytes)?;
+        self.file.write_all(&[0; 8][..(8 - bytes.len() % 8) % 8])?;
+        self.count += batch.entries.len() as u64;
+        Ok(())
+    }
+    pub fn finish(mut self) -> io::Result<()> {
+        self.file.seek(SeekFrom::Start(8))?;
+        self.file.write_all(&self.count.to_le_bytes())?;
+        self.file.as_file().sync_all()?;
+        self.file.persist(&self.destination).map_err(|e| e.error)?;
+        Ok(())
+    }
+}
 #[derive(Clone)]
 pub struct MmapSearchIndex {
-    #[allow(dead_code)] // mmap must be kept alive to back the archived reference
     mmap: Arc<Mmap>,
-    archived: &'static ArchivedSearchIndex,
+    blocks: Arc<Vec<(std::ops::Range<usize>, usize)>>,
+    count: usize,
+    file_revision: (u64, std::time::SystemTime),
 }
-
-unsafe impl Send for MmapSearchIndex {}
-unsafe impl Sync for MmapSearchIndex {}
-
 impl MmapSearchIndex {
     pub fn open<P: AsRef<Path>>(path: P) -> io::Result<Self> {
+        Self::open_checked(path, &|| false)
+    }
+
+    pub fn open_checked<P: AsRef<Path>>(path: P, cancelled: &dyn Fn() -> bool) -> io::Result<Self> {
         let file = File::open(path)?;
+        let metadata = file.metadata()?;
+        let file_revision = (metadata.len(), metadata.modified()?);
         let mmap = unsafe { Mmap::map(&file)? };
-
         verify_header(&mmap)?;
-
-        let mmap = Arc::new(mmap);
-
-        let archived_bytes = &mmap[HEADER_SIZE..];
-        let archived = unsafe { rkyv::access_unchecked::<ArchivedSearchIndex>(archived_bytes) };
-
-        let archived: &'static ArchivedSearchIndex = unsafe { std::mem::transmute(archived) };
-
-        Ok(Self { mmap, archived })
+        let version = u32::from_le_bytes(mmap[4..8].try_into().unwrap());
+        let mut blocks = Vec::new();
+        let mut count = 0usize;
+        let mut validate = |range: std::ops::Range<usize>| -> io::Result<()> {
+            if cancelled() {
+                return Err(io::Error::new(io::ErrorKind::Interrupted, "Search stopped"));
+            }
+            let bytes = mmap.get(range.clone()).ok_or_else(|| {
+                io::Error::new(io::ErrorKind::InvalidData, "Truncated search index")
+            })?;
+            let mut context = CancellableArchive {
+                inner: ArchiveValidator::new(bytes),
+                cancelled,
+            };
+            let archive = rkyv::api::access_with_context::<
+                ArchivedSearchIndex,
+                _,
+                rkyv::rancor::Error,
+            >(bytes, &mut context)
+            .map_err(|e| {
+                io::Error::new(
+                    if cancelled() {
+                        io::ErrorKind::Interrupted
+                    } else {
+                        io::ErrorKind::InvalidData
+                    },
+                    e.to_string(),
+                )
+            })?;
+            blocks.push((range, count));
+            count = count
+                .checked_add(archive.entries.len())
+                .ok_or_else(|| io::Error::other("Index too large"))?;
+            Ok(())
+        };
+        if version == 4 {
+            validate(HEADER_SIZE..mmap.len())?;
+        } else {
+            if mmap.len() < 24 {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "Missing index count",
+                ));
+            }
+            let expected = u64::from_le_bytes(mmap[8..16].try_into().unwrap());
+            let source_len = u64::from_le_bytes(mmap[16..24].try_into().unwrap());
+            if source_len > 4096 {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "Invalid source stamp",
+                ));
+            }
+            let mut offset = 24 + source_len as usize + (8 - source_len as usize % 8) % 8;
+            if offset > mmap.len() {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "Truncated source stamp",
+                ));
+            }
+            while offset < mmap.len() {
+                let size = mmap.get(offset..offset + 8).ok_or_else(|| {
+                    io::Error::new(io::ErrorKind::InvalidData, "Missing block size")
+                })?;
+                let length = usize::try_from(u64::from_le_bytes(size.try_into().unwrap()))
+                    .map_err(|_| io::Error::other("Block too large"))?;
+                offset += 8;
+                let end = offset
+                    .checked_add(length)
+                    .filter(|end| *end <= mmap.len())
+                    .ok_or_else(|| {
+                        io::Error::new(io::ErrorKind::InvalidData, "Invalid block length")
+                    })?;
+                validate(offset..end)?;
+                offset = end
+                    .checked_add((8 - length % 8) % 8)
+                    .filter(|end| *end <= mmap.len())
+                    .ok_or_else(|| {
+                        io::Error::new(io::ErrorKind::InvalidData, "Truncated padding")
+                    })?;
+            }
+            if count as u64 != expected {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "Index count mismatch",
+                ));
+            }
+        }
+        Ok(Self {
+            mmap: Arc::new(mmap),
+            blocks: Arc::new(blocks),
+            count,
+            file_revision,
+        })
     }
-
-    #[inline]
+    pub fn is_current(&self, path: &Path) -> bool {
+        std::fs::metadata(path)
+            .ok()
+            .and_then(|m| m.modified().ok().map(|t| (m.len(), t)))
+            .is_some_and(|revision| revision == self.file_revision)
+    }
     pub fn len(&self) -> usize {
-        self.archived.entries.len()
+        self.count
     }
-
-    #[inline]
-    #[allow(dead_code)]
     pub fn is_empty(&self) -> bool {
-        self.archived.entries.is_empty()
+        self.count == 0
     }
-
-    #[inline]
-    #[allow(dead_code)]
+    fn block(&self, range: &std::ops::Range<usize>) -> &ArchivedSearchIndex {
+        // Validated by open_checked; our writer publishes by replacement, never in-place.
+        unsafe { rkyv::access_unchecked::<ArchivedSearchIndex>(&self.mmap[range.clone()]) }
+    }
     pub fn get_entry_ref(&self, index: usize) -> Option<SearchGameEntryRef<'_>> {
-        self.archived
+        if index >= self.count {
+            return None;
+        }
+        let block = self.blocks.partition_point(|(_, start)| *start <= index) - 1;
+        let (range, start) = &self.blocks[block];
+        self.block(range)
             .entries
-            .get(index)
+            .get(index - start)
             .map(SearchGameEntryRef::from)
     }
-
-    #[allow(dead_code)]
-    pub fn iter(&self) -> impl ExactSizeIterator {
-        self.archived.entries.iter().map(SearchGameEntryRef::from)
+    pub fn iter(&self) -> impl Iterator<Item = SearchGameEntryRef<'_>> {
+        self.blocks.iter().flat_map(|(range, _)| {
+            self.block(range)
+                .entries
+                .iter()
+                .map(SearchGameEntryRef::from)
+        })
     }
-
     pub fn par_iter(&self) -> impl ParallelIterator<Item = SearchGameEntryRef<'_>> + '_ {
-        self.archived
-            .entries
-            .par_iter()
-            .map(SearchGameEntryRef::from)
+        self.blocks.par_iter().flat_map(|(range, _)| {
+            self.block(range)
+                .entries
+                .par_iter()
+                .map(SearchGameEntryRef::from)
+        })
     }
-
     pub fn is_valid<P: AsRef<Path>>(path: P) -> bool {
         let path = path.as_ref();
         if !path.exists() {
@@ -297,6 +466,26 @@ impl MmapSearchIndex {
             return false;
         }
 
+        if let Ok(mut file) = File::open(&index_path) {
+            let mut header = [0; 24];
+            if file.read_exact(&mut header).is_ok()
+                && u32::from_le_bytes(header[4..8].try_into().unwrap()) == VERSION
+            {
+                let length = u64::from_le_bytes(header[16..24].try_into().unwrap());
+                if length > 4096 {
+                    return false;
+                }
+                if length > 0 {
+                    let mut stamp = vec![0; length as usize];
+                    if file.read_exact(&mut stamp).is_err() {
+                        return false;
+                    }
+                    return super::position_query::source_stamp(db_path)
+                        .is_ok_and(|source| source.as_bytes() == stamp);
+                }
+            }
+        }
+
         let Ok(db_meta) = std::fs::metadata(db_path) else {
             return false;
         };
@@ -311,7 +500,13 @@ impl MmapSearchIndex {
             return false;
         };
 
-        index_modified >= db_modified
+        let mut wal_path = db_path.as_os_str().to_os_string();
+        wal_path.push("-wal");
+        let wal_current = match std::fs::metadata(PathBuf::from(wal_path)) {
+            Ok(meta) => meta.len() == 0 || meta.modified().is_ok_and(|time| time <= index_modified),
+            Err(error) => error.kind() == io::ErrorKind::NotFound,
+        };
+        index_modified >= db_modified && wal_current
     }
 }
 
@@ -422,8 +617,8 @@ mod tests {
         ];
 
         // Create many entries
-        let mut index = SearchIndex::with_capacity(1000);
-        for i in 0..1000 {
+        let mut index = SearchIndex::with_capacity(5000);
+        for i in 0..5000 {
             index.push(SearchGameEntry {
                 id: i,
                 white_id: i * 2,
@@ -451,7 +646,11 @@ mod tests {
 
         // Load with mmap
         let index = MmapSearchIndex::open(&path).unwrap();
-        assert_eq!(index.len(), 1000);
+        assert_eq!(index.len(), 5000);
+        assert_eq!(index.get_entry_ref(4095).unwrap().id, 4095);
+        assert_eq!(index.get_entry_ref(4096).unwrap().id, 4096);
+        assert_eq!(index.iter().count(), 5000);
+        assert_eq!(index.par_iter().count(), 5000);
 
         // Verify random access
         let entry = index.get_entry_ref(500).unwrap();
@@ -504,5 +703,39 @@ mod tests {
         std::thread::sleep(std::time::Duration::from_millis(20));
         std::fs::write(&db_path, b"database-v2").unwrap();
         assert!(!MmapSearchIndex::is_up_to_date(&db_path));
+    }
+
+    #[test]
+    fn legacy_archives_are_validated_and_chunk_validation_is_cancellable() {
+        let dir = tempdir().unwrap();
+        let legacy = dir.path().join("legacy.ecsi");
+        let mut bytes = MAGIC.to_vec();
+        bytes.extend(4u32.to_le_bytes());
+        bytes.extend(
+            rkyv::to_bytes::<rkyv::rancor::Error>(&SearchIndex::default())
+                .unwrap()
+                .iter(),
+        );
+        std::fs::write(&legacy, &bytes).unwrap();
+        assert!(MmapSearchIndex::open(&legacy).unwrap().is_empty());
+        bytes.truncate(8);
+        std::fs::write(&legacy, bytes).unwrap();
+        assert!(MmapSearchIndex::is_valid(&legacy));
+        assert_eq!(
+            MmapSearchIndex::open(&legacy).err().unwrap().kind(),
+            io::ErrorKind::InvalidData
+        );
+
+        let blocks = dir.path().join("blocks.ecsi");
+        let mut writer = SearchIndexWriter::new(&blocks).unwrap();
+        writer.write_batch(&SearchIndex::default()).unwrap();
+        writer.write_batch(&SearchIndex::default()).unwrap();
+        writer.finish().unwrap();
+        let calls = std::cell::Cell::new(0);
+        let result = MmapSearchIndex::open_checked(&blocks, &|| {
+            calls.set(calls.get() + 1);
+            calls.get() >= 2
+        });
+        assert_eq!(result.err().unwrap().kind(), io::ErrorKind::Interrupted);
     }
 }

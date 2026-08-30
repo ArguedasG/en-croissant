@@ -27,6 +27,7 @@ export async function openFile(
     options?: {
         gameNumber?: number;
         pgn?: string;
+        reuseTabId?: string;
     },
 ) {
     const store = getDefaultStore();
@@ -87,6 +88,7 @@ export async function openFile(
             file: fileInfo,
             gameNumber,
         },
+        reuseTabId: options?.reuseTabId,
     });
 
     if (fileInfo.metadata.type === "repertoire") {

@@ -248,6 +248,12 @@ pub async fn write_game(
     pgn: String,
     state: tauri::State<'_, AppState>,
 ) -> Result<(), Error> {
+    write_game_at(file_path, n, pgn, &state)
+}
+
+fn write_game_at(file_path: String, n: i32, pgn: String, state: &AppState) -> Result<(), Error> {
+    // A saved or externally replaced PGN may no longer match cached byte offsets.
+    state.pgn_offsets.remove(&file_path);
     let file = PathBuf::from(file_path);
     if !file.exists() {
         File::create(&file)?;
@@ -275,5 +281,59 @@ pub async fn write_game(
 
     write_to_end(&mut tmpf, &mut file_w)?;
 
+    state
+        .pgn_offsets
+        .remove(&file.to_string_lossy().to_string());
+
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn game(index: usize) -> String {
+        format!("[Event \"Game {index}\"]\n[Result \"*\"]\n\n1. e4 e5 *\n\n")
+    }
+
+    #[test]
+    fn save_selected_game_discards_stale_offsets_and_preserves_neighbours() {
+        let directory = tempfile::tempdir().unwrap();
+        let file = directory.path().join("many.pgn");
+        std::fs::write(&file, (0..225).map(game).collect::<String>()).unwrap();
+        let path = file.to_string_lossy().to_string();
+        let state = AppState::default();
+        state.pgn_offsets.insert(path.clone(), vec![1, 2, 3]);
+        let replacement =
+            "[Event \"Changed game\"]\n[Result \"*\"]\n\n1. d4 {A longer annotation} d5 *\n\n";
+
+        write_game_at(path.clone(), 105, replacement.to_owned(), &state).unwrap();
+
+        assert!(!state.pgn_offsets.contains_key(&path));
+        let mut parser = PgnParser::new(File::open(file).unwrap());
+        for index in 0..225 {
+            let record = parser.read_game().unwrap();
+            if index == 105 {
+                assert!(record.contains("[Event \"Changed game\"]"));
+                assert!(record.contains("A longer annotation"));
+            } else {
+                assert!(
+                    record.contains(&format!("[Event \"Game {index}\"]")),
+                    "record {index}"
+                );
+            }
+        }
+        assert!(parser.read_game().unwrap().is_empty());
+    }
+
+    #[test]
+    fn save_new_single_game_and_replace_it_without_leaving_old_text() {
+        let directory = tempfile::tempdir().unwrap();
+        let file = directory.path().join("single.pgn");
+        let path = file.to_string_lossy().to_string();
+        let state = AppState::default();
+        write_game_at(path.clone(), 0, game(100_000), &state).unwrap();
+        write_game_at(path, 0, game(1), &state).unwrap();
+        assert_eq!(std::fs::read_to_string(file).unwrap(), game(1));
+    }
 }

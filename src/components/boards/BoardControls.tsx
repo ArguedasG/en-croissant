@@ -1,4 +1,5 @@
-import { ActionIcon, Stack, Tooltip } from "@mantine/core";
+import { ActionIcon, Menu, Stack, Tooltip } from "@mantine/core";
+import { notifications } from "@mantine/notifications";
 import {
   IconArrowBack,
   IconCamera,
@@ -8,25 +9,33 @@ import {
   IconEraser,
   IconFlask,
   IconSwitchVertical,
-  IconTarget,
+  IconPlayerPlay,
   IconZoomCheck,
+  IconDots,
+  IconBook2,
 } from "@tabler/icons-react";
 import { useLoaderData } from "@tanstack/react-router";
 import { save } from "@tauri-apps/plugin-dialog";
 import { writeFile } from "@tauri-apps/plugin-fs";
 import domtoimage from "dom-to-image";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
-import { memo, useContext } from "react";
+import { memo, useContext, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useStore } from "zustand";
 import { TreeStateContext } from "@/components/common/TreeStateContext";
 import {
   autoSaveAtom,
-  currentGameStateAtom,
+  activeTabAtom,
   currentTabAtom,
   eraseDrawablesOnClickAtom,
+  tabsAtom,
 } from "@/state/atoms";
 import { keyMapAtom } from "@/state/keybinds";
+import { trainingAreasAtom } from "@/state/trainingAreas";
+import { buildModelGameSourcePgn } from "@/utils/modelGame";
+import { createTab, getTabFile, getTabGameNumber, saveToFile } from "@/utils/tabs";
+import type { TreeState } from "@/utils/treeReducer";
+import RepertoireAdditionModal from "../training/RepertoireAdditionModal";
 
 interface BoardControlsProps {
   editingMode: boolean;
@@ -62,9 +71,44 @@ function BoardControls({
 
   const keyMap = useAtomValue(keyMapAtom);
   const [currentTab, setCurrentTab] = useAtom(currentTabAtom);
-  const setGameState = useSetAtom(currentGameStateAtom);
+  const setTabs = useSetAtom(tabsAtom);
+  const setActiveTab = useSetAtom(activeTabAtom);
   const autoSave = useAtomValue(autoSaveAtom);
   const eraseDrawablesOnClick = useAtomValue(eraseDrawablesOnClickAtom);
+  const [addition, setAddition] = useState<{
+    tree: TreeState;
+    source: { label: string; recordIndexes: number[] };
+  } | null>(null);
+  const file = getTabFile(currentTab);
+  const trainingAreas = useAtomValue(trainingAreasAtom);
+
+  async function savePgn(mode: "save" | "saveAs" | "export") {
+    try {
+      if (mode === "save" && saveFile) {
+        await saveFile();
+        return;
+      }
+      const ownerId = currentTab?.value;
+      await saveToFile({
+        dir: documentDir,
+        tab: currentTab,
+        store,
+        isUserSave: true,
+        mode,
+        protectedPaths: Object.values(trainingAreas.openings.repertoires)
+          .filter((repertoire) => repertoire.path === file?.path && repertoire.sourcePath)
+          .map((repertoire) => repertoire.sourcePath!),
+        setCurrentTab: (update) =>
+          setTabs((tabs) =>
+            tabs.map((tab) =>
+              tab.value === ownerId ? (typeof update === "function" ? update(tab) : update) : tab,
+            ),
+          ),
+      });
+    } catch (error) {
+      notifications.show({ color: "red", message: String(error) });
+    }
+  }
 
   const orientation = headers.orientation || "white";
   const toggleOrientation = () =>
@@ -74,16 +118,21 @@ function BoardControls({
       orientation: orientation === "black" ? "white" : "black",
     });
 
-  function changeTabType() {
-    setCurrentTab((t) => {
-      if (t.type === "analysis") {
-        setGameState("settingUp");
-      }
-      return {
-        ...t,
-        type: t.type === "analysis" ? "play" : "analysis",
-      };
-    });
+  async function changeTabType() {
+    if (currentTab?.type === "analysis") {
+      const source = store.getState();
+      // Copy only the selected branch up to the visible position. A fresh owner
+      // also isolates game state and prevents play/autosave from editing a repertoire.
+      await createTab({
+        tab: { name: t("Home.NewGame", "New Game"), type: "play" },
+        pgn: buildModelGameSourcePgn(source.root, source.headers, source.position),
+        position: source.position.map(() => 0),
+        setTabs,
+        setActiveTab,
+      });
+    } else {
+      setCurrentTab((tab) => ({ ...tab, type: "analysis" }));
+    }
   }
 
   const takeSnapshot = async () => {
@@ -111,6 +160,70 @@ function BoardControls({
 
   return (
     <Stack gap={4} align="center">
+      {addition && (
+        <RepertoireAdditionModal
+          tree={addition.tree}
+          treeSource={addition.source}
+          onClose={() => setAddition(null)}
+        />
+      )}
+      <Menu position="right-start" withinPortal>
+        <Menu.Target>
+          <ActionIcon aria-label={t("Pgn.Actions", "PGN and repertoire actions")}>
+            <IconDots size="1.2rem" />
+          </ActionIcon>
+        </Menu.Target>
+        <Menu.Dropdown>
+          <Menu.Label>
+            {file
+              ? `${file.path} · ${getTabGameNumber(currentTab) + 1}/${file.numGames}`
+              : currentTab?.gameOrigin.kind === "database"
+                ? currentTab.gameOrigin.database
+                : t("Pgn.Unsaved", "Not saved to a file")}
+          </Menu.Label>
+          <Menu.Item onClick={() => void savePgn("save")}>
+            {t("Pgn.Save", "Save current game")}
+          </Menu.Item>
+          <Menu.Item onClick={() => void savePgn("saveAs")}>
+            {t("Pgn.SaveAs", "Save as new PGN")}
+          </Menu.Item>
+          <Menu.Item onClick={() => void savePgn("export")}>
+            {t("Pgn.ExportCopy", "Export PGN copy")}
+          </Menu.Item>
+          <Menu.Label>
+            {t(
+              "Pgn.ExportHint",
+              "Save As changes this tab's file; Export keeps its source and unsaved changes.",
+            )}
+          </Menu.Label>
+          <Menu.Divider />
+          <Menu.Item
+            leftSection={<IconBook2 size={16} />}
+            onClick={() => {
+              const state = store.getState();
+              setAddition({
+                source: {
+                  label:
+                    file?.path ??
+                    (currentTab?.gameOrigin.kind === "database"
+                      ? `${currentTab.gameOrigin.database} #${currentTab.gameOrigin.gameId}`
+                      : (currentTab?.name ?? t("Repertoire.AnalysisSource", "Analysis board"))),
+                  recordIndexes: [getTabGameNumber(currentTab)],
+                },
+                tree: structuredClone({
+                  root: state.root,
+                  headers: state.headers,
+                  position: state.position,
+                  dirty: state.dirty,
+                  report: state.report,
+                }),
+              });
+            }}
+          >
+            {t("Repertoire.AddContent", "Add to repertoire")}
+          </Menu.Item>
+        </Menu.Dropdown>
+      </Menu>
       <Tooltip position="right" label={t("Board.Action.TakeSnapshot")}>
         <ActionIcon onClick={() => takeSnapshot()}>
           <IconCamera size="1.2rem" />
@@ -133,7 +246,7 @@ function BoardControls({
       >
         <ActionIcon onClick={changeTabType}>
           {currentTab?.type === "analysis" ? (
-            <IconTarget size="1.2rem" />
+            <IconPlayerPlay size="1.2rem" />
           ) : (
             <IconZoomCheck size="1.2rem" />
           )}

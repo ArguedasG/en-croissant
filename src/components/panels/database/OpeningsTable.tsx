@@ -2,6 +2,7 @@ import { Group, Progress, Text } from "@mantine/core";
 import { useAtom } from "jotai";
 import { DataTable } from "mantine-datatable";
 import { memo, useContext } from "react";
+import { useTranslation } from "react-i18next";
 import { useStore } from "zustand";
 import { TreeStateContext } from "@/components/common/TreeStateContext";
 import { moveNotationTypeAtom } from "@/state/atoms";
@@ -11,6 +12,7 @@ import { formatNumber } from "@/utils/format";
 import classes from "./OpeningsTable.module.css";
 
 function OpeningsTable({ openings, loading }: { openings: Opening[]; loading: boolean }) {
+  const { t } = useTranslation();
   const store = useContext(TreeStateContext)!;
   const makeMove = useStore(store, (s) => s.makeMove);
   const [moveNotationType] = useAtom(moveNotationTypeAtom);
@@ -18,7 +20,8 @@ function OpeningsTable({ openings, loading }: { openings: Opening[]; loading: bo
   const whiteTotal = openings?.reduce((acc, curr) => acc + curr.white, 0);
   const blackTotal = openings?.reduce((acc, curr) => acc + curr.black, 0);
   const drawTotal = openings?.reduce((acc, curr) => acc + curr.draw, 0);
-  const grandTotal = whiteTotal + blackTotal + drawTotal;
+  const unknownTotal = openings.reduce((acc, curr) => acc + (curr.unknown ?? 0), 0);
+  const grandTotal = whiteTotal + blackTotal + drawTotal + unknownTotal;
 
   if (openings.length > 0) {
     openings = [
@@ -28,6 +31,7 @@ function OpeningsTable({ openings, loading }: { openings: Opening[]; loading: bo
         white: whiteTotal,
         black: blackTotal,
         draw: drawTotal,
+        unknown: unknownTotal,
       },
     ];
   }
@@ -67,9 +71,9 @@ function OpeningsTable({ openings, loading }: { openings: Opening[]; loading: bo
         {
           accessor: "total",
           width: 180,
-          render: ({ move, white, draw, black }) => {
-            const total = white + draw + black;
-            const percentage = (total / grandTotal) * 100;
+          render: ({ move, white, draw, black, unknown = 0 }) => {
+            const total = white + draw + black + unknown;
+            const percentage = grandTotal ? (total / grandTotal) * 100 : 0;
             return (
               <Group>
                 {move !== "Total" && <Text fz="sm">{percentage.toFixed(0)}%</Text>}
@@ -82,36 +86,52 @@ function OpeningsTable({ openings, loading }: { openings: Opening[]; loading: bo
         },
         {
           accessor: "results",
-          render: ({ black, white, draw }) => {
-            const total = white + draw + black;
+          render: ({ black, white, draw, unknown = 0 }) => {
+            const total = white + draw + black + unknown || 1;
             const whitePercent = (white / total) * 100;
             const drawPercent = (draw / total) * 100;
             const blackPercent = (black / total) * 100;
             return (
-              <Progress.Root size="xl" className={classes.result}>
-                <Progress.Section value={whitePercent} className={classes.whiteResultsSection}>
-                  <Progress.Label c="black">
-                    {whitePercent > 10 ? `${whitePercent.toFixed(1)}%` : ""}
-                  </Progress.Label>
-                </Progress.Section>
-                <Progress.Section value={drawPercent} color="gray">
-                  <Progress.Label>
-                    {drawPercent > 10 ? `${drawPercent.toFixed(1)}%` : ""}
-                  </Progress.Label>
-                </Progress.Section>
-                <Progress.Section value={blackPercent} color="black">
-                  <Progress.Label>
-                    {blackPercent > 10 ? `${blackPercent.toFixed(1)}%` : ""}
-                  </Progress.Label>
-                </Progress.Section>
-              </Progress.Root>
+              <div>
+                <Progress.Root size="xl" className={classes.result}>
+                  <Progress.Section value={whitePercent} className={classes.whiteResultsSection}>
+                    <Progress.Label c="black">
+                      {whitePercent > 10 ? `${whitePercent.toFixed(1)}%` : ""}
+                    </Progress.Label>
+                  </Progress.Section>
+                  <Progress.Section value={drawPercent} color="gray">
+                    <Progress.Label>
+                      {drawPercent > 10 ? `${drawPercent.toFixed(1)}%` : ""}
+                    </Progress.Label>
+                  </Progress.Section>
+                  <Progress.Section value={blackPercent} color="black">
+                    <Progress.Label>
+                      {blackPercent > 10 ? `${blackPercent.toFixed(1)}%` : ""}
+                    </Progress.Label>
+                  </Progress.Section>
+                  <Progress.Section
+                    value={(unknown / total) * 100}
+                    color="blue"
+                    title={t("Board.Database.UnknownResults", { count: unknown })}
+                  >
+                    <Progress.Label>{unknown ? "?" : ""}</Progress.Label>
+                  </Progress.Section>
+                </Progress.Root>
+                {unknown > 0 && (
+                  <Text size="xs" c="dimmed">
+                    {t("Board.Database.UnknownResults", { count: unknown })}
+                  </Text>
+                )}
+              </div>
             );
           },
         },
       ]}
       idAccessor="move"
       emptyState={"No games found"}
-      onRowClick={({ record }) => makeMove({ payload: record.move })}
+      onRowClick={({ record }) => {
+        if (record.move !== "Total" && record.move !== "*") makeMove({ payload: record.move });
+      }}
     />
   );
 }

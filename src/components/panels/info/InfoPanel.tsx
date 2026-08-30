@@ -36,16 +36,26 @@ import useSWR from "swr";
 import { getDatabases } from "@/utils/db";
 import { useNavigate } from "@tanstack/react-router";
 import { useActiveDatabaseViewStore } from "@/state/store/database";
+import { INITIAL_FEN } from "chessops/fen";
+import BoardStartPanel from "@/components/boards/BoardStartPanel";
 
 function InfoPanel({ addGame }: { addGame?: () => void }) {
   const store = use(TreeStateContext)!;
   const stats = useStore(store, getStats);
   const headers = useStore(store, (s) => s.headers);
+  const root = useStore(store, (s) => s.root);
+  const dirty = useStore(store, (s) => s.dirty);
   const [games, setGames] = useState<Map<number, string>>(new Map());
   const currentTab = useAtomValue(currentTabAtom);
   const tabFile = getTabFile(currentTab);
   const gameNumber = getTabGameNumber(currentTab);
   const isReportoire = tabFile?.metadata.type === "repertoire";
+  const isEmptyAnalysis =
+    currentTab?.type === "analysis" &&
+    currentTab.gameOrigin.kind === "none" &&
+    !dirty &&
+    root.fen === INITIAL_FEN &&
+    root.children.length === 0;
 
   const { t } = useTranslation();
 
@@ -58,6 +68,7 @@ function InfoPanel({ addGame }: { addGame?: () => void }) {
       <ScrollArea pb="sm">
         <FileInfo setGames={setGames} />
         <Stack px="sm">
+          {isEmptyAnalysis && <BoardStartPanel />}
           <GameInfo
             headers={headers}
             simplified={isReportoire}
@@ -217,6 +228,7 @@ function GameSelectorAccordion({
   return (
     <>
       <ConfirmChangesModal
+        tab={currentTab!}
         opened={confirmChanges}
         toggle={toggleConfirmChanges}
         closeTab={() => {

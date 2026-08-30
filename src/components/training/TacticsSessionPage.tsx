@@ -1,4 +1,5 @@
 // @ts-nocheck -- Legacy page kept temporarily while the redesigned route is validated.
+import { useTranslation as useTrainingTranslation } from "react-i18next";
 import {
   Alert,
   Badge,
@@ -79,6 +80,8 @@ function embeddedExercise(exercise: TacticsExercise, index: number): TacticsLoad
 }
 
 export default function TacticsSessionPage() {
+  const { t: trainingT } = useTrainingTranslation();
+
   const { setId } = useParams({ from: "/training/tactics/practice/$setId" });
   const navigate = useNavigate();
   const [areas, setAreas] = useAtom(trainingAreasAtom);
@@ -141,13 +144,22 @@ export default function TacticsSessionPage() {
     startedAt.current = Date.now();
 
     async function loadExercise() {
-      if (!set) throw new Error("El set ya no existe.");
+      if (!set)
+        throw new Error(
+          trainingT("Training.Copy.Thesetnolongerexists.39d26ccd", "The set no longer exists."),
+        );
       if (set.source?.kind === "pgnFile") {
         return loadTacticsFileExercise(set, activeIndex);
       }
       const id = set.exerciseIds[activeIndex];
       const stored = areas.tactics.exercises[id];
-      if (!stored) throw new Error("El ejercicio ya no existe.");
+      if (!stored)
+        throw new Error(
+          trainingT(
+            "Training.Copy.Theexercisenolongerexists.3608ccd2",
+            "The exercise no longer exists.",
+          ),
+        );
       return embeddedExercise(stored, activeIndex);
     }
 
@@ -157,7 +169,14 @@ export default function TacticsSessionPage() {
       })
       .catch((error) => {
         if (!cancelled) {
-          setLoadError(error instanceof Error ? error.message : "No se pudo cargar el ejercicio.");
+          setLoadError(
+            error instanceof Error
+              ? error.message
+              : trainingT(
+                  "Training.Copy.Couldnotloadtheexercise.06c7cf47",
+                  "Could not load the exercise.",
+                ),
+          );
         }
       })
       .finally(() => {
@@ -167,7 +186,7 @@ export default function TacticsSessionPage() {
     return () => {
       cancelled = true;
     };
-  }, [activeIndex, areas.tactics.exercises, set]);
+  }, [activeIndex, areas.tactics.exercises, set, trainingT]);
 
   const sessionElapsed = Date.now() - sessionStartedAt.current;
   const timedOut = Boolean(
@@ -177,9 +196,14 @@ export default function TacticsSessionPage() {
   useEffect(() => {
     if (timedOut && !finished) {
       setFinished(true);
-      setMessage("Terminó el tiempo configurado para este ciclo.");
+      setMessage(
+        trainingT(
+          "Training.Copy.Thetimesetforthis.fd7eeeba",
+          "The time set for this cycle has elapsed.",
+        ),
+      );
     }
-  }, [finished, timedOut]);
+  }, [finished, timedOut, trainingT]);
 
   function finishAttempt(
     outcome: "correct" | "incorrect" | "unsupported",
@@ -234,7 +258,9 @@ export default function TacticsSessionPage() {
     await navigate({ to: "/" });
     await launchTrainingPosition({
       fen: exercise.fen,
-      name: `Análisis · ${exercise.title}`,
+      name: trainingT("Training.Copy.Analysisv0.b7ffacfd", "Analysis · {{v0}}", {
+        v0: exercise.title,
+      }),
       type: "analysis",
       setTabs,
       setActiveTab,
@@ -252,21 +278,36 @@ export default function TacticsSessionPage() {
         <Card withBorder>
           <Stack align="center" py="xl">
             <IconCheck size={44} color="var(--mantine-color-teal-6)" />
-            <Title order={2}>Ciclo terminado</Title>
+            <Title order={2}>
+              {trainingT("Training.Copy.Cyclecomplete.976ade57", "Cycle complete")}
+            </Title>
             <Text c="dimmed" ta="center">
-              Completaste {cycleCompleted} de {cycleTotal} ejercicios con {failures} fallos en{" "}
+              {" "}
+              {trainingT("Training.Copy.Youcompleted.03409b51", "You completed")} {cycleCompleted}{" "}
+              {trainingT("Training.Copy.of.959a45d4", "of")} {cycleTotal}{" "}
+              {trainingT("Training.Copy.exerciseswith.15f9d880", "exercises with")} {failures}{" "}
+              {trainingT("Training.Copy.mistakesin.64106f51", "mistakes in")}{" "}
               {formatTime(sessionElapsed)}.
             </Text>
             {set.config.mode === "woodpecker" && pendingIndexes.length > 0 && (
               <Alert color="orange">
-                El siguiente ciclo conservará {pendingIndexes.length} ejercicios pendientes: los
-                fallados y los que no alcanzaste a resolver.
+                {" "}
+                {trainingT(
+                  "Training.Copy.Thenextcyclewillkeep.4a07fb87",
+                  "The next cycle will keep",
+                )}{" "}
+                {pendingIndexes.length}{" "}
+                {trainingT(
+                  "Training.Copy.pendingexercisesmistakesandthose.a121a288",
+                  "pending exercises: mistakes and those you did not reach.",
+                )}{" "}
               </Alert>
             )}
             {message && <Alert color="yellow">{message}</Alert>}
             <Group>
               <Button component={Link} to="/training/tactics" variant="default">
-                Volver a Táctica
+                {" "}
+                {trainingT("Training.Copy.Backtotactics.8239d676", "Back to tactics")}{" "}
               </Button>
               <Button
                 color="orange"
@@ -287,8 +328,10 @@ export default function TacticsSessionPage() {
                 }}
               >
                 {set.config.mode === "woodpecker" && pendingIndexes.length > 0
-                  ? `Repetir ${pendingIndexes.length} pendientes`
-                  : "Iniciar otro ciclo"}
+                  ? trainingT("Training.Copy.Repeatv0pending.9682fd00", "Repeat {{v0}} pending", {
+                      v0: pendingIndexes.length,
+                    })
+                  : trainingT("Training.Copy.Startanothercycle.5a314a60", "Start another cycle")}
               </Button>
             </Group>
           </Stack>
@@ -307,26 +350,36 @@ export default function TacticsSessionPage() {
               to="/training/tactics"
               variant="subtle"
               p="xs"
-              aria-label="Volver"
+              aria-label={trainingT("Training.Copy.Back.ab26ae7b", "Back")}
             >
               <IconArrowLeft size={20} />
             </Button>
             <div>
               <Title order={2}>{set.name}</Title>
               <Text size="sm" c="dimmed">
-                {set.config.mode === "woodpecker" ? `Ciclo ${cycleNumber} · ` : ""}Ejercicio{" "}
-                {cycleCompleted} de {cycleTotal} · quedan {Math.max(0, cycleTotal - cycleCompleted)}
+                {set.config.mode === "woodpecker"
+                  ? trainingT("Training.Copy.Cyclev0.3cd4ba92", "Cycle {{v0}} · ", {
+                      v0: cycleNumber,
+                    })
+                  : ""}
+                {trainingT("Training.Copy.Exercise.24563ba8", "Exercise")} {cycleCompleted}{" "}
+                {trainingT("Training.Copy.of.959a45d4", "of")} {cycleTotal}{" "}
+                {trainingT("Training.Copy.remaining.38be9974", "· remaining")}{" "}
+                {Math.max(0, cycleTotal - cycleCompleted)}
               </Text>
             </div>
           </Group>
           <Group>
             {set.config.mode === "woodpecker" && (
               <Badge color="orange" variant="light">
-                {formatTime(sessionElapsed)} · {failures}/{set.config.maxFailuresPerCycle} fallos
+                {formatTime(sessionElapsed)} · {failures}/{set.config.maxFailuresPerCycle}{" "}
+                {trainingT("Training.Copy.mistakes.5fb1604c", "mistakes")}{" "}
               </Badge>
             )}
             <Badge variant="light">
-              {set.config.mode === "woodpecker" ? "Woodpecker" : "Guiado"}
+              {set.config.mode === "woodpecker"
+                ? "Woodpecker"
+                : trainingT("Training.Copy.Guided.57bd258f", "Guided")}
             </Badge>
           </Group>
         </Group>
@@ -335,11 +388,19 @@ export default function TacticsSessionPage() {
           <Card withBorder>
             <Stack align="center" py="xl">
               <Loader />
-              <Text c="dimmed">Cargando ejercicio…</Text>
+              <Text c="dimmed">
+                {trainingT("Training.Copy.Loadingexercise.983a7b36", "Loading exercise…")}
+              </Text>
             </Stack>
           </Card>
         ) : loadError || !exercise ? (
-          <Alert color="red" title="No se pudo cargar el ejercicio">
+          <Alert
+            color="red"
+            title={trainingT(
+              "Training.Copy.Couldnotloadtheexercise.8e74da97",
+              "Could not load the exercise",
+            )}
+          >
             {loadError}
           </Alert>
         ) : (
@@ -356,16 +417,34 @@ export default function TacticsSessionPage() {
                       .length
                   }
                   onCorrect={(move) =>
-                    finishAttempt("correct", move, "Ejercicio resuelto correctamente.")
+                    finishAttempt(
+                      "correct",
+                      move,
+                      trainingT(
+                        "Training.Copy.Exercisesolvedcorrectly.550fdc32",
+                        "Exercise solved correctly.",
+                      ),
+                    )
                   }
                   onIncorrect={(move, expected) =>
-                    finishAttempt("incorrect", move, `Jugada incorrecta. Se esperaba ${expected}.`)
+                    finishAttempt(
+                      "incorrect",
+                      move,
+                      trainingT(
+                        "Training.Copy.IncorrectmoveExpectedv0.a15a7dd4",
+                        "Incorrect move. Expected {{v0}}.",
+                        { v0: expected },
+                      ),
+                    )
                   }
                 />
               ) : set.config.validationMode === "prepared" ? (
                 <Alert color="yellow">
-                  Este registro no contiene una solución preparada. Cambia la validación a
-                  automática o por motor.
+                  {" "}
+                  {trainingT(
+                    "Training.Copy.Thisrecordhasnoprepared.9e18dd59",
+                    "This record has no prepared solution. Switch validation to automatic or engine.",
+                  )}{" "}
                 </Alert>
               ) : (
                 <EngineTacticsBoard
@@ -383,12 +462,22 @@ export default function TacticsSessionPage() {
                   <Text fw={600}>{exercise.title}</Text>
                   <Text size="sm" c="dimmed" mt="xs">
                     {exercise.solutionLines.length > 0
-                      ? "Encuentra y completa la continuación preparada."
-                      : "La jugada se validará bajo demanda con un motor local."}
+                      ? trainingT(
+                          "Training.Copy.Findandcompletetheprepared.14fd71f2",
+                          "Find and complete the prepared continuation.",
+                        )
+                      : trainingT(
+                          "Training.Copy.Themovewillbevalidated.9eeea91c",
+                          "The move will be validated on demand by a local engine.",
+                        )}
                   </Text>
                   {exercise.hasVariations && (
                     <Badge mt="sm" variant="outline">
-                      Incluye variantes
+                      {" "}
+                      {trainingT(
+                        "Training.Copy.Includesvariations.1d395f73",
+                        "Includes variations",
+                      )}{" "}
                     </Badge>
                   )}
                   {message && (
@@ -409,14 +498,17 @@ export default function TacticsSessionPage() {
                     leftSection={<IconSearch size={16} />}
                     onClick={analyzePosition}
                   >
-                    Analizar posición
+                    {" "}
+                    {trainingT("Training.Copy.Analyzeposition.7cd475fb", "Analyze position")}{" "}
                   </Button>
                   <Button
                     disabled={!result}
                     leftSection={<IconPlayerSkipForward size={16} />}
                     onClick={nextExercise}
                   >
-                    {cycleCompleted >= cycleTotal ? "Terminar ciclo" : "Siguiente ejercicio"}
+                    {cycleCompleted >= cycleTotal
+                      ? trainingT("Training.Copy.Endcycle.a7c5a269", "End cycle")
+                      : trainingT("Training.Copy.Nextexercise.415f5c2e", "Next exercise")}
                   </Button>
                 </Stack>
               </Stack>
@@ -429,10 +521,16 @@ export default function TacticsSessionPage() {
 }
 
 function MissingSet() {
+  const { t: trainingT } = useTrainingTranslation();
+
   return (
     <Container size="md" py="xl">
-      <Alert color="red" title="Set no encontrado">
-        El set de Táctica ya no existe o no contiene ejercicios.
+      <Alert color="red" title={trainingT("Training.Copy.Setnotfound.63b73336", "Set not found")}>
+        {" "}
+        {trainingT(
+          "Training.Copy.Thetacticssetnolonger.714ff554",
+          "The tactics set no longer exists or contains no exercises.",
+        )}{" "}
       </Alert>
       <Button
         component={Link}
@@ -440,7 +538,8 @@ function MissingSet() {
         mt="md"
         leftSection={<IconArrowLeft size={16} />}
       >
-        Volver a Táctica
+        {" "}
+        {trainingT("Training.Copy.Backtotactics.8239d676", "Back to tactics")}{" "}
       </Button>
     </Container>
   );
@@ -502,6 +601,8 @@ function GuidedTacticsBoardInner({
   onCorrect: (lastMove: string) => void;
   onIncorrect: (move: string, expected: string) => void;
 }) {
+  const { t: trainingT } = useTrainingTranslation();
+
   const store = useContext(TreeStateContext)!;
   const makeMove = useStore(store, (state) => state.makeMove);
   const boardRef = useRef<HTMLDivElement>(null);
@@ -544,7 +645,11 @@ function GuidedTacticsBoardInner({
     const matching = candidates.current.filter((line) => line[ply.current] === uci);
     if (matching.length === 0) {
       completed.current = true;
-      onIncorrect(uci, candidates.current[0]?.[ply.current] ?? "la continuación preparada");
+      onIncorrect(
+        uci,
+        candidates.current[0]?.[ply.current] ??
+          trainingT("Training.Copy.thepreparedcontinuation.f1d96bb2", "the prepared continuation"),
+      );
       return;
     }
     candidates.current = matching;
@@ -582,6 +687,8 @@ function EngineTacticsBoard({
     feedback: string,
   ) => void;
 }) {
+  const { t: trainingT } = useTrainingTranslation();
+
   const storedEngines = useAtomValue(enginesAtom);
   const engines = useMemo(() => storedEngines ?? [], [storedEngines]);
   const [busy, setBusy] = useState(false);
@@ -600,7 +707,10 @@ function EngineTacticsBoard({
       onResult(
         "unsupported",
         playedMove,
-        "Configura Stockfish u otro motor de referencia local para validar este ejercicio.",
+        trainingT(
+          "Training.Copy.SetupStockfishoranother.5a97d66d",
+          "Set up Stockfish or another local reference engine to validate this exercise.",
+        ),
       );
       return;
     }
@@ -624,13 +734,26 @@ function EngineTacticsBoard({
       onResult(
         correct ? "correct" : "incorrect",
         playedMove,
-        correct ? "Jugada aceptada por el motor." : "La jugada queda fuera del umbral configurado.",
+        correct
+          ? trainingT(
+              "Training.Copy.Moveacceptedbytheengine.e7c93b94",
+              "Move accepted by the engine.",
+            )
+          : trainingT(
+              "Training.Copy.Themovefallsoutsidethe.ebe21d39",
+              "The move falls outside the configured threshold.",
+            ),
       );
     } catch (error) {
       onResult(
         "unsupported",
         playedMove,
-        error instanceof Error ? error.message : "No se pudo consultar el motor.",
+        error instanceof Error
+          ? error.message
+          : trainingT(
+              "Training.Copy.Couldnotquerytheengine.de1b61cd",
+              "Could not query the engine.",
+            ),
       );
     } finally {
       setBusy(false);

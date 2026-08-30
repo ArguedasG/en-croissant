@@ -264,6 +264,7 @@ export async function buildOpeningTrainingPgn(
                     other: {
                         ...tree.headers.other,
                         ChapterName: variant.name,
+                        ChessLabContentType: variant.contentType,
                         [REPERTOIRE_ID_HEADER]: repertoire.id,
                         [VARIANT_ID_HEADER]: variant.id,
                     },
@@ -398,7 +399,10 @@ function openingName(headers: GameHeaders, index: number): string {
     return `Variante ${index + 1}`;
 }
 
-function isModelGame(headers: GameHeaders): boolean {
+export function isModelGame(headers: GameHeaders): boolean {
+    const declaredType = headers.other?.ChessLabContentType;
+    if (declaredType === "theory" || declaredType === "modelGame")
+        return declaredType === "modelGame";
     return [
         headers.event,
         headers.white,

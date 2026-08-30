@@ -2,6 +2,7 @@ import {
   Box,
   Button,
   Group,
+  NumberInput,
   SegmentedControl,
   Select,
   SimpleGrid,
@@ -60,11 +61,36 @@ function LocalOptionsPanel({ boardFen }: { boardFen: string }) {
             data={[
               { value: "white", label: t("Fen.White") },
               { value: "black", label: t("Fen.Black") },
+              { value: "any", label: t("Board.Database.Local.EitherColor") },
             ]}
             value={options.color}
-            onChange={(v) => setOptions({ ...options, color: v as "white" | "black" })}
+            onChange={(v) => setOptions({ ...options, color: v as "white" | "black" | "any" })}
           />
         </Stack>
+
+        <NumberInput
+          label={t("Board.Database.Local.MinimumElo")}
+          description={t("Board.Database.Local.EloScope")}
+          min={1}
+          max={4000}
+          allowDecimal={false}
+          placeholder={t("Board.Database.Local.Result.Any")}
+          value={options.elo_min ?? ""}
+          onChange={(value) =>
+            setOptions({ ...options, elo_min: value === "" ? undefined : Number(value) })
+          }
+        />
+        <NumberInput
+          label={t("Board.Database.Local.MaximumElo")}
+          min={1}
+          max={4000}
+          allowDecimal={false}
+          placeholder={t("Board.Database.Local.Result.Any")}
+          value={options.elo_max ?? ""}
+          onChange={(value) =>
+            setOptions({ ...options, elo_max: value === "" ? undefined : Number(value) })
+          }
+        />
 
         <Stack gap={4}>
           <Text fw="bold" fz="sm">

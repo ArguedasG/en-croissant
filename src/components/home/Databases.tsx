@@ -20,6 +20,7 @@ import { sessionsAtom } from "@/state/atoms";
 import { activeDatabaseViewStore } from "@/state/store/database";
 import { getDatabases, query_players } from "@/utils/db";
 import type { Session } from "@/utils/session";
+import type { PlayerAnalysisSource } from "@/utils/playerAnalysis";
 import { unwrap } from "@/utils/unwrap";
 import { DatabaseViewStateContext } from "../databases/DatabaseViewStateContext";
 import PersonalPlayerCard from "./PersonalCard";
@@ -48,6 +49,7 @@ function isDatabaseFromSession(db: DatabaseInfo, sessions: Session[]) {
 interface PersonalInfo {
   db: DatabaseInfo;
   info: PlayerGameInfo;
+  analysisSource: PlayerAnalysisSource;
 }
 
 function Databases() {
@@ -95,7 +97,7 @@ function Databases() {
       const results = await Promise.allSettled(
         databases
           .filter((db) => playerDbs.includes((db.type === "success" && db.title) || ""))
-          .map(async (db, i) => {
+          .map(async (db) => {
             const players = await query_players(db.file, {
               name: db.username,
               options: {
@@ -110,7 +112,16 @@ function Databases() {
             }
             const player = players.data[0];
             const info = unwrap(await commands.getPlayersGameInfo(db.file, player.id));
-            return { db, info };
+            return {
+              db,
+              info,
+              analysisSource: {
+                databasePath: db.file,
+                databaseTitle: (db.type === "success" && (db.title || db.filename)) || db.filename,
+                playerId: player.id,
+                playerName: player.name || name,
+              },
+            };
           }),
       );
       return results
@@ -208,6 +219,7 @@ function Databases() {
               info={{
                 site_stats_data: personalInfo.flatMap((i) => i.info.site_stats_data),
               }}
+              analysisSources={personalInfo.map((item) => item.analysisSource)}
             />
           </DatabaseViewStateContext.Provider>
         ))}
